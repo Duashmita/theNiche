@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Console</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #07070f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #c8c8d0;
+      user-select: none;
+    }
+    h1 {
+      font-size: 13px;
+      letter-spacing: 6px;
+      color: #444;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    #game-container {
+      position: relative;
+    }
+    #display-canvas {
+      display: block;
+      width: 960px;
+      max-width: 100vw;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 1px solid #1a1a2e;
+      background: #030308;
+    }
+    #ui-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    #bottom-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      width: 960px;
+      max-width: 100vw;
+    }
+    #controls-hint {
+      font-size: 11px;
+      color: #333;
+      letter-spacing: 1px;
+    }
+    #input-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    #mic-btn {
+      background: #0d0d1e;
+      border: 1px solid #2a2a4a;
+      color: #5588cc;
+      padding: 7px 14px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 1px;
+    }
+    #mic-btn:hover { border-color: #4466aa; color: #88aaee; }
+    #mic-btn.listening {
+      background: #1e0d0d;
+      border-color: #aa3333;
+      color: #ee6666;
+      animation: breathe 0.9s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+    #text-input {
+      background: #0a0a14;
+      border: 1px solid #1e1e3a;
+      color: #c8c8d0;
+      padding: 7px 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      width: 500px;
+      outline: none;
+      letter-spacing: 0.5px;
+    }
+    #text-input:focus { border-color: #3a3a6a; }
+    #text-input::placeholder { color: #2a2a3a; }
+    #submit-btn {
+      background: #0d1a0d;
+      border: 1px solid #2a4a2a;
+      color: #55aa55;
+      padding: 7px 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      cursor: pointer;
+      letter-spacing: 1px;
+    }
+    #submit-btn:hover { border-color: #4a8a4a; color: #88cc88; }
+    #transcript {
+      font-size: 11px;
+      color: #444;
+      min-height: 16px;
+      letter-spacing: 0.5px;
+      font-style: italic;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-D9uPn6cf.js"></script>
+</head>
+<body>
+  <h1>Voice Console</h1>
+  <div id="game-container">
+    <canvas id="display-canvas" width="960" height="540"></canvas>
+    <div id="ui-overlay"></div>
+  </div>
+  <div id="bottom-bar">
+    <div id="input-row">
+      <button id="mic-btn">[ mic ]</button>
+      <input id="text-input" type="text"
+        placeholder="describe your game — 'a dark dungeon with gravity flip'" />
+      <button id="submit-btn">[ generate ]</button>
+    </div>
+    <div id="controls-hint">
+      arrows / WASD — move &nbsp;·&nbsp; space / up — jump (double-jump) &nbsp;·&nbsp; speak or type to create
+    </div>
+    <div id="transcript"></div>
+  </div>
+</body>
+</html>
