@@ -235,6 +235,14 @@ export interface SharedState {
   gameOver: boolean;
 }
 
+// ─── Asset generation ─────────────────────────────────────────────────────────
+export type AssetType =
+  | 'ground' | 'platform' | 'hazard' | 'decoration'
+  | 'player' | 'enemy_patrol' | 'enemy_flyer' | 'coin';
+
+/** key: '{themeId}/{assetType}' → generated HTMLImageElement */
+export type AssetMap = Map<string, HTMLImageElement>;
+
 // ─── Theme colour palettes (used by Renderer, no image assets needed) ─────────
 export const THEME_PALETTES: Record<ThemeId, {
   bg: string;
