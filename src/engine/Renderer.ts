@@ -216,16 +216,34 @@ export class Renderer {
     ctx.fillStyle = grad;
     ctx.fillRect(gx, gy, gw, gh);
 
-    // Draw a smattering of small "stars" / ambient dots for depth
-    // They are seeded deterministically so they don't flicker
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    const STAR_COUNT = 32;
-    for (let i = 0; i < STAR_COUNT; i++) {
-      // Pseudo-random but stable positions using a simple hash
-      const sx = ((i * 137 + 53) % 400) - px % 400;
-      const sy = ((i * 97  + 71) % 200) - py % 200;
-      const size = (i % 3 === 0) ? 1.5 : 1;
-      ctx.fillRect(gx + ((sx + 400) % camera.screenWidth), gy + ((sy + 200) % camera.screenHeight), size, size);
+    const bgImg = this.getAsset(themeId, 'background');
+    const hasBgImage = !!(bgImg && bgImg.complete && bgImg.naturalWidth > 0);
+    if (hasBgImage && bgImg) {
+      const destH = gh;
+      const destW = (bgImg.naturalWidth / bgImg.naturalHeight) * destH;
+      const mod = ((px % destW) + destW) % destW;
+      const prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = 0.94;
+      let tx = gx - mod;
+      while (tx < gx + gw + destW) {
+        ctx.drawImage(bgImg, tx, gy, destW, destH);
+        tx += destW;
+      }
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = prevSmooth;
+    }
+
+    // Stars / ambient dots when no generated backdrop (avoids clutter on landscapes)
+    if (!hasBgImage) {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      const STAR_COUNT = 32;
+      for (let i = 0; i < STAR_COUNT; i++) {
+        const sx = ((i * 137 + 53) % 400) - px % 400;
+        const sy = ((i * 97  + 71) % 200) - py % 200;
+        const size = (i % 3 === 0) ? 1.5 : 1;
+        ctx.fillRect(gx + ((sx + 400) % camera.screenWidth), gy + ((sy + 200) % camera.screenHeight), size, size);
+      }
     }
 
     // For underwater theme: add gentle caustic shimmer lines

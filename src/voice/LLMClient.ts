@@ -187,6 +187,9 @@ export class LLMClient {
       voiceMomentCount:   typeof p.voiceMomentCount === 'number' ? Math.min(3, Math.max(1, p.voiceMomentCount)) : 2,
       backgroundColor:    p.backgroundColor || pal.bg,
       palette:            Array.isArray(p.palette) && p.palette.length >= 4 ? p.palette.slice(0, 4) : pal.palette,
+      assetDescriptions:  (typeof p.assetDescriptions === 'object' && p.assetDescriptions !== null)
+                            ? p.assetDescriptions as Record<string, string>
+                            : {},
     };
   }
 }
