@@ -12,9 +12,10 @@ import { JuiceSystem }      from './engine/JuiceSystem';
 import { AudioManager }     from './engine/AudioManager';
 import { VoicePipeline }    from './voice/VoicePipeline';
 import { LLMClient }        from './voice/LLMClient';
+import { AssetGenerator }   from './engine/AssetGenerator';
 import { LoadingScreen }    from './ui/LoadingScreen';
 import { VoiceMomentOverlay } from './ui/VoiceMomentOverlay';
-import { SharedState, GameSpec } from './types';
+import { SharedState, GameSpec, ThemeId, StateChange, AssetMap } from './types';
 
 // ─── HTML elements ─────────────────────────────────────────────────────────────
 const displayCanvas   = document.getElementById('display-canvas') as HTMLCanvasElement;
@@ -42,9 +43,12 @@ const renderer     = new Renderer(nativeCanvas, displayCanvas);
 const juice        = new JuiceSystem(events, player);
 const audio        = new AudioManager(events);
 
-const voicePipeline  = new VoicePipeline();
-const llmClient      = new LLMClient(
+const voicePipeline   = new VoicePipeline();
+const llmClient       = new LLMClient(
   (import.meta as any).env?.VITE_GEMINI_KEY ?? '',
+);
+const assetGenerator  = new AssetGenerator(
+  (import.meta as any).env?.VITE_REPLICATE_KEY ?? '',
 );
 
 const loadingScreen       = new LoadingScreen(nativeCanvas);
@@ -147,6 +151,21 @@ events.on('checkpoint_reached', () => {
   console.log('Checkpoint!');
 });
 
+events.on('voice_moment_revealed', (payload: { response: { stateChanges: StateChange[] } }) => {
+  if (!state.spec || !assetGenerator.hasKey()) return;
+  const hasVisualChange = payload.response.stateChanges.some(
+    (c) => c.action === 'modify_terrain' || c.action === 'fill_room',
+  );
+  if (hasVisualChange) {
+    const themeId = state.spec.theme.tileset as ThemeId;
+    const palette = state.spec.theme.palette;
+    const description = state.spec.meta.description;
+    assetGenerator.regenerateTerrain(themeId, palette, description).then((updated) => {
+      renderer.patchAssets(updated);
+    }).catch(() => { /* keep existing assets */ });
+  }
+});
+
 events.on('player_died', () => {
   state.gameOver = true;
   state.phase    = 'game_over';
@@ -215,9 +234,15 @@ async function generateGame(description: string): Promise<void> {
     const generator = new ProceduralGenerator();
     const spec = generator.generate(params);
 
+    loadingScreen.update('Painting the world...');
+    const assetMap: AssetMap = assetGenerator.hasKey()
+      ? await assetGenerator.generate(params)
+      : new Map();
+
     state.phase = 'gameplay';
     cancelAnimationFrame(loadingRaf);
     initGame(spec);
+    renderer.setAssets(assetMap);
     transcriptEl.textContent = `"${spec.meta.name}" — ${spec.meta.description}`;
   } catch (err) {
     console.error('Generation failed:', err);

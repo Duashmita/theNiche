@@ -141,6 +141,8 @@ export interface GenerationParams {
   voiceMomentCount: number;
   backgroundColor: string;
   palette: string[];
+  /** LLM-generated visual description per asset type, used as image-gen prompts */
+  assetDescriptions: Partial<Record<AssetType, string>>;
 }
 
 // ─── Runtime tile info (returned by Tilemap.getTilesInRect) ───────────────────
@@ -234,6 +236,15 @@ export interface SharedState {
   activeWeapon: string | null;
   gameOver: boolean;
 }
+
+// ─── Asset generation ─────────────────────────────────────────────────────────
+export type AssetType =
+  | 'ground' | 'platform' | 'hazard' | 'decoration'
+  | 'player' | 'enemy_patrol' | 'enemy_flyer' | 'coin'
+  | 'background';
+
+/** key: '{themeId}/{assetType}' → generated HTMLImageElement */
+export type AssetMap = Map<string, HTMLImageElement>;
 
 // ─── Theme colour palettes (used by Renderer, no image assets needed) ─────────
 export const THEME_PALETTES: Record<ThemeId, {
