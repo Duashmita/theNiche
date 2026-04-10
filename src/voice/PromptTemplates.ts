@@ -20,7 +20,18 @@ Given a natural language game description, output a JSON object matching this EX
   "rules": string[],
   "voiceMomentCount": number,
   "backgroundColor": string,
-  "palette": string[]
+  "palette": string[],
+  "assetDescriptions": {
+    "ground": string,
+    "platform": string,
+    "hazard": string,
+    "player": string,
+    "enemy_patrol": string,
+    "enemy_flyer": string,
+    "coin": string,
+    "decoration": string,
+    "background": string
+  }
 }
 
 RULES:
@@ -40,7 +51,8 @@ RULES:
 7. enemyArchetypes: array of "patrol" | "flyer" | "chaser". Use "patrol" for easy, "chaser" for hard.
 8. voiceMomentCount: 1–3. 2 for linear, 1 for arena, 2–3 for rooms.
 9. palette: exactly 4 hex color strings matching the theme (ground, platform, accent, highlight).
-10. backgroundColor: dark hex color matching the theme.`;
+10. backgroundColor: dark hex color matching the theme.
+11. assetDescriptions: describe each asset in 5-8 words. Include "background" as a wide panoramic parallax layer: pretty, atmospheric landscape for the theme, simplified (not busy). Other assets: player hero-like, enemies threatening, coins rewarding, hazards dangerous, ground solid. Coherent set: consistent shape language; theme the whole set together.`;
 
 export const VOICE_MOMENT_PROMPT = `You interpret what a player said during a voice moment in a 2D platformer and return JSON state changes.
 

@@ -3,17 +3,22 @@ import { AssetMap, AssetType, GenerationParams, ThemeId } from '../types';
 const ASSET_TYPES: AssetType[] = [
   'ground', 'platform', 'hazard', 'decoration',
   'player', 'enemy_patrol', 'enemy_flyer', 'coin',
+  'background',
 ];
 
 const TYPE_PROMPTS: Record<AssetType, string> = {
-  ground:       'solid ground block, stone or earth texture, tileable surface',
-  platform:     'floating platform, single wooden plank, thin ledge',
-  hazard:       'danger tile, sharp spikes pointing up, vivid warning color, deadly',
-  decoration:   'background atmospheric prop, subtle detail, no collision',
-  player:       'hero character sprite, upright idle pose, small humanoid',
-  enemy_patrol: 'ground enemy, crab or goblin shape, facing right, menacing creature',
-  enemy_flyer:  'flying enemy, bat or drone silhouette, wings spread',
-  coin:         'collectible coin or gem, glowing, shiny, pickup item',
+  ground:       'solid squareground tile, simple dirt and stone, flat top edge',
+  platform:     'thin floating plank, single color',
+  hazard:       'upward-pointing spikes, simple triangles',
+  decoration:   'small background prop, bush or rock, minimal',
+  player:       'small humanoid character, idle pose, facing right',
+  enemy_patrol: 'small ground creature, facing right, simple shape',
+  enemy_flyer:  'small flying creature, wings spread, simple silhouette',
+  coin:         'round golden coin, simple shine mark',
+  background:
+    'ultra-wide panoramic sidescroller backdrop, horizontal layered landscape, ' +
+    'pretty atmospheric scenery with soft silhouettes and gentle depth, ' +
+    'simplified readable shapes, not busy or cluttered, cohesive mood',
 };
 
 // Proxied through Vite dev server to avoid CORS — see vite.config.ts server.proxy
@@ -28,7 +33,7 @@ export class AssetGenerator {
 
   async generate(params: GenerationParams): Promise<AssetMap> {
     const results = await Promise.allSettled(
-      ASSET_TYPES.map(type => this.generateOne(type, params.theme, params.description, params.palette)),
+      ASSET_TYPES.map(type => this.generateOne(type, params.theme, params.description, params.palette, params.assetDescriptions)),
     );
     const map: AssetMap = new Map();
     results.forEach((result, i) => {
@@ -58,9 +63,10 @@ export class AssetGenerator {
     themeId: ThemeId,
     description: string,
     palette: string[],
+    assetDescriptions: Partial<Record<string, string>> = {},
   ): Promise<HTMLImageElement | null> {
     try {
-      const prompt = this.buildPrompt(type, themeId, description, palette);
+      const prompt = this.buildPrompt(type, themeId, description, palette, assetDescriptions);
       const res = await fetch(REPLICATE_URL, {
         method: 'POST',
         headers: {
@@ -69,12 +75,22 @@ export class AssetGenerator {
           'Prefer': 'wait',
         },
         body: JSON.stringify({
-          input: {
-            prompt,
-            aspect_ratio: '1:1',
-            output_format: 'png',
-            output_quality: 80,
-          },
+          input:
+            type === 'background'
+              ? {
+                  prompt,
+                  aspect_ratio: 'custom',
+                  width: 1440,
+                  height: 288,
+                  output_format: 'png',
+                  output_quality: 70,
+                }
+              : {
+                  prompt,
+                  aspect_ratio: '1:1',
+                  output_format: 'png',
+                  output_quality: 60,
+                },
         }),
       });
       if (!res.ok) {
@@ -104,14 +120,23 @@ export class AssetGenerator {
     themeId: ThemeId,
     description: string,
     palette: string[],
+    assetDescriptions: Partial<Record<string, string>> = {},
   ): string {
     const colors = palette.slice(0, 3).join(' ');
-    const typeDesc = TYPE_PROMPTS[type];
+    // Prefer LLM-generated description; fall back to generic type hint
+    const typeDesc = assetDescriptions[type] || TYPE_PROMPTS[type];
     const context = description ? `, ${description}` : '';
+    if (type === 'background') {
+      return (
+        `2D game parallax backdrop, ${themeId} theme${context}, ${typeDesc}, ` +
+        `soft limited palette harmonizing with ${colors}, smooth gradients between regions, ` +
+        `no characters, no UI, no text, full opaque image`
+      );
+    }
     return (
-      `pixel art game sprite, ${themeId} theme${context}, ${typeDesc}, ` +
-      `dominant colors ${colors}, 16x16 pixel art style, retro platformer, ` +
-      `clean pixel edges, dark background, no text, no ui elements`
+      `2D game sprite, ${themeId} theme${context}, ${typeDesc}, ` +
+      `16-bit pixel art, ${colors} palette only, clean edges, ` +
+      `solid color fills, no anti-aliasing, transparent background, no text`
     );
   }
 }
