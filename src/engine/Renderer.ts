@@ -6,6 +6,7 @@ import {
   GameSpec,
   TileType,
   Particle,
+  AssetMap,
 } from '../types';
 import { clamp } from '../utils/math';
 
@@ -76,7 +77,21 @@ export class Renderer {
     this.displayCtx = displayCanvas.getContext('2d')!;
 
     // CRITICAL: pixel-art upscaling must be crisp, not blurry
+    this.ctx.imageSmoothingEnabled        = false;
     this.displayCtx.imageSmoothingEnabled = false;
+  }
+
+  // ─── Generated asset map (swapped in after Imagen calls resolve) ──────────
+  private assets: AssetMap = new Map();
+
+  setAssets(assets: AssetMap): void { this.assets = assets; }
+
+  patchAssets(partial: AssetMap): void {
+    partial.forEach((img, key) => this.assets.set(key, img));
+  }
+
+  private getAsset(themeId: ThemeId, type: string): HTMLImageElement | undefined {
+    return this.assets.get(`${themeId}/${type}`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -117,7 +132,7 @@ export class Renderer {
     for (const entity of entities) {
       if (!entity.active) continue;
       if (!camera.isVisible(entity.x, entity.y, entity.width, entity.height)) continue;
-      this.drawEntity(ctx, entity, palette, state.frameCount);
+      this.drawEntity(ctx, entity, palette, state.frameCount, themeId);
     }
 
     // 6. Player
@@ -201,16 +216,34 @@ export class Renderer {
     ctx.fillStyle = grad;
     ctx.fillRect(gx, gy, gw, gh);
 
-    // Draw a smattering of small "stars" / ambient dots for depth
-    // They are seeded deterministically so they don't flicker
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    const STAR_COUNT = 32;
-    for (let i = 0; i < STAR_COUNT; i++) {
-      // Pseudo-random but stable positions using a simple hash
-      const sx = ((i * 137 + 53) % 400) - px % 400;
-      const sy = ((i * 97  + 71) % 200) - py % 200;
-      const size = (i % 3 === 0) ? 1.5 : 1;
-      ctx.fillRect(gx + ((sx + 400) % camera.screenWidth), gy + ((sy + 200) % camera.screenHeight), size, size);
+    const bgImg = this.getAsset(themeId, 'background');
+    const hasBgImage = !!(bgImg && bgImg.complete && bgImg.naturalWidth > 0);
+    if (hasBgImage && bgImg) {
+      const destH = gh;
+      const destW = (bgImg.naturalWidth / bgImg.naturalHeight) * destH;
+      const mod = ((px % destW) + destW) % destW;
+      const prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = 0.94;
+      let tx = gx - mod;
+      while (tx < gx + gw + destW) {
+        ctx.drawImage(bgImg, tx, gy, destW, destH);
+        tx += destW;
+      }
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = prevSmooth;
+    }
+
+    // Stars / ambient dots when no generated backdrop (avoids clutter on landscapes)
+    if (!hasBgImage) {
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      const STAR_COUNT = 32;
+      for (let i = 0; i < STAR_COUNT; i++) {
+        const sx = ((i * 137 + 53) % 400) - px % 400;
+        const sy = ((i * 97  + 71) % 200) - py % 200;
+        const size = (i % 3 === 0) ? 1.5 : 1;
+        ctx.fillRect(gx + ((sx + 400) % camera.screenWidth), gy + ((sy + 200) % camera.screenHeight), size, size);
+      }
     }
 
     // For underwater theme: add gentle caustic shimmer lines
@@ -260,61 +293,79 @@ export class Renderer {
         switch (tile) {
           // ── Ground (SOLID) ────────────────────────────────────────────────
           case TileType.GROUND: {
-            // Base fill
-            ctx.fillStyle = palette.ground;
-            ctx.fillRect(wx, wy, ts, ts);
-            // 2px lighter top face to give a "lit from above" feel
-            ctx.fillStyle = palette.groundTop;
-            ctx.fillRect(wx, wy, ts, 2);
-            // 1px darker right-edge shadow
-            ctx.fillStyle = 'rgba(0,0,0,0.25)';
-            ctx.fillRect(wx + ts - 1, wy + 2, 1, ts - 2);
+            const groundImg = this.getAsset(themeId, 'ground');
+            if (groundImg) {
+              ctx.drawImage(groundImg, wx, wy, ts, ts);
+            } else {
+              // Base fill
+              ctx.fillStyle = palette.ground;
+              ctx.fillRect(wx, wy, ts, ts);
+              // 2px lighter top face to give a "lit from above" feel
+              ctx.fillStyle = palette.groundTop;
+              ctx.fillRect(wx, wy, ts, 2);
+              // 1px darker right-edge shadow
+              ctx.fillStyle = 'rgba(0,0,0,0.25)';
+              ctx.fillRect(wx + ts - 1, wy + 2, 1, ts - 2);
+            }
             break;
           }
 
           // ── Platform (one-way) ────────────────────────────────────────────
           case TileType.PLATFORM: {
-            // Thin floating plank
-            ctx.fillStyle = palette.platform;
-            ctx.fillRect(wx, wy + 2, ts, ts - 2);
-            // 3px bright stripe across the very top
-            ctx.fillStyle = this.lighten(palette.platform, 40);
-            ctx.fillRect(wx, wy + 2, ts, 3);
-            // Subtle underside shadow
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
-            ctx.fillRect(wx, wy + ts - 2, ts, 2);
+            const platformImg = this.getAsset(themeId, 'platform');
+            if (platformImg) {
+              ctx.drawImage(platformImg, wx, wy + 2, ts, ts - 2);
+            } else {
+              // Thin floating plank
+              ctx.fillStyle = palette.platform;
+              ctx.fillRect(wx, wy + 2, ts, ts - 2);
+              // 3px bright stripe across the very top
+              ctx.fillStyle = this.lighten(palette.platform, 40);
+              ctx.fillRect(wx, wy + 2, ts, 3);
+              // Subtle underside shadow
+              ctx.fillStyle = 'rgba(0,0,0,0.35)';
+              ctx.fillRect(wx, wy + ts - 2, ts, 2);
+            }
             break;
           }
 
           // ── Hazard (spikes) ───────────────────────────────────────────────
           case TileType.HAZARD: {
-            // Pulsing alpha base
-            const hazardAlpha = Math.sin(fc * 0.1) * 0.3 + 0.7;
+            const hazardImg = this.getAsset(themeId, 'hazard');
+            if (hazardImg) {
+              const hazardAlpha = Math.sin(fc * 0.1) * 0.3 + 0.7;
+              ctx.globalAlpha = hazardAlpha;
+              ctx.drawImage(hazardImg, wx, wy, ts, ts);
+              ctx.globalAlpha = 1;
+            } else {
+              // Pulsing alpha base
+              const hazardAlpha = Math.sin(fc * 0.1) * 0.3 + 0.7;
 
-            ctx.fillStyle = palette.hazard;
-            ctx.globalAlpha = hazardAlpha;
-            ctx.fillRect(wx, wy + 4, ts, ts - 4);
-            ctx.globalAlpha = 1;
+              ctx.fillStyle = palette.hazard;
+              ctx.globalAlpha = hazardAlpha;
+              ctx.fillRect(wx, wy + 4, ts, ts - 4);
+              ctx.globalAlpha = 1;
 
-            // Draw 4 spike triangles pointing upward
-            ctx.fillStyle = this.lighten(palette.hazard, 20);
-            const spikeCount = 4;
-            const spikeWidth = ts / spikeCount;
-            for (let s = 0; s < spikeCount; s++) {
-              const sx = wx + s * spikeWidth;
-              ctx.beginPath();
-              ctx.moveTo(sx,                     wy + 4);   // base left
-              ctx.lineTo(sx + spikeWidth,        wy + 4);   // base right
-              ctx.lineTo(sx + spikeWidth / 2,    wy);       // tip
-              ctx.closePath();
-              ctx.fill();
+              // Draw 4 spike triangles pointing upward
+              ctx.fillStyle = this.lighten(palette.hazard, 20);
+              const spikeCount = 4;
+              const spikeWidth = ts / spikeCount;
+              for (let s = 0; s < spikeCount; s++) {
+                const sx = wx + s * spikeWidth;
+                ctx.beginPath();
+                ctx.moveTo(sx,                     wy + 4);   // base left
+                ctx.lineTo(sx + spikeWidth,        wy + 4);   // base right
+                ctx.lineTo(sx + spikeWidth / 2,    wy);       // tip
+                ctx.closePath();
+                ctx.fill();
+              }
+
+              // Pulse overlay
+              ctx.fillStyle = palette.hazard;
+              ctx.globalAlpha = (1 - hazardAlpha) * 0.4;
+              ctx.fillRect(wx, wy, ts, ts);
+              ctx.globalAlpha = 1;
             }
-
-            // Pulse overlay
-            ctx.fillStyle = palette.hazard;
-            ctx.globalAlpha = (1 - hazardAlpha) * 0.4;
-            ctx.fillRect(wx, wy, ts, ts);
-            ctx.globalAlpha = 1;
             break;
           }
 
@@ -352,8 +403,13 @@ export class Renderer {
 
           // ── Decoration (visual only, no collision) ────────────────────────
           case TileType.DECORATION: {
-            ctx.fillStyle = 'rgba(120,80,40,0.6)';
-            ctx.fillRect(wx + 3, wy + 4, ts - 6, ts - 4);
+            const decorImg = this.getAsset(themeId, 'decoration');
+            if (decorImg) {
+              ctx.drawImage(decorImg, wx + 3, wy + 4, ts - 6, ts - 4);
+            } else {
+              ctx.fillStyle = 'rgba(120,80,40,0.6)';
+              ctx.fillRect(wx + 3, wy + 4, ts - 6, ts - 4);
+            }
             break;
           }
 
@@ -407,21 +463,27 @@ export class Renderer {
     ctx.scale(player.scaleX, player.scaleY);
     ctx.translate(-cx, -cy);
 
-    // ── Body ──────────────────────────────────────────────────────────────
-    ctx.fillStyle = isDead ? '#aa2222' : (isDash ? this.lighten(palette.player, 50) : palette.player);
-    ctx.fillRect(player.x, player.y + 2, bw, bh);
-
-    // ── Head (circle) ─────────────────────────────────────────────────────
+    // ── Body + Head ───────────────────────────────────────────────────────
     const headRadius = 4;
     const headX = player.x + bw / 2;
-    const headY = player.y + 2 - headRadius;  // 5px above body top → approx player.y - 3
+    const headY = player.y + 2 - headRadius;  // approx player.y - 2
 
-    ctx.fillStyle = isDead
-      ? '#bb3333'
-      : this.lighten(palette.player, 20);
-    ctx.beginPath();
-    ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
-    ctx.fill();
+    const themeId: ThemeId = (state.spec?.theme?.tileset as ThemeId) ?? 'forest';
+    const playerImg = this.getAsset(themeId, 'player');
+    if (playerImg && !isDead) {
+      // Sprite covers full body+head area; keep dynamic overlays (eyes, legs) on top
+      ctx.drawImage(playerImg, player.x, player.y - headRadius, bw, bh + headRadius + 2);
+    } else {
+      // Procedural body
+      ctx.fillStyle = isDead ? '#aa2222' : (isDash ? this.lighten(palette.player, 50) : palette.player);
+      ctx.fillRect(player.x, player.y + 2, bw, bh);
+
+      // Procedural head
+      ctx.fillStyle = isDead ? '#bb3333' : this.lighten(palette.player, 20);
+      ctx.beginPath();
+      ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // ── Eyes ──────────────────────────────────────────────────────────────
     if (!isDead) {
@@ -503,6 +565,7 @@ export class Renderer {
     entity: Entity,
     palette: ReturnType<typeof this.getPalette>,
     frameCount: number,
+    themeId: ThemeId,
   ): void {
     const { x, y, archetype, animFrame, direction } = entity;
 
@@ -512,22 +575,27 @@ export class Renderer {
       case 'patrol': {
         const ew = 12;
         const eh = 7;
-        // Body
-        ctx.fillStyle = palette.enemy;
-        ctx.fillRect(x, y, ew, eh);
-        // Leg nubs (bottom corners)
-        ctx.fillStyle = this.darken(palette.enemy, 30);
-        ctx.fillRect(x,          y + eh, 2, 3);
-        ctx.fillRect(x + ew - 2, y + eh, 2, 3);
-        // Eye dots (facing direction)
-        ctx.fillStyle = '#ffffff';
-        const eyeOffset = direction === 1 ? ew - 3 : 1;
-        ctx.fillRect(x + eyeOffset,     y + 2, 2, 2);
-        ctx.fillRect(x + eyeOffset + 3, y + 2, 2, 2);
-        // Animated walk cycle: shift body slightly
-        const walkBob = Math.floor(frameCount / 8) % 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.fillRect(x, y + eh + 3 - walkBob, ew, 1);
+        const patrolImg = this.getAsset(themeId, 'enemy_patrol');
+        if (patrolImg) {
+          ctx.drawImage(patrolImg, x, y, ew, eh + 3);
+        } else {
+          // Body
+          ctx.fillStyle = palette.enemy;
+          ctx.fillRect(x, y, ew, eh);
+          // Leg nubs (bottom corners)
+          ctx.fillStyle = this.darken(palette.enemy, 30);
+          ctx.fillRect(x,          y + eh, 2, 3);
+          ctx.fillRect(x + ew - 2, y + eh, 2, 3);
+          // Eye dots (facing direction)
+          ctx.fillStyle = '#ffffff';
+          const eyeOffset = direction === 1 ? ew - 3 : 1;
+          ctx.fillRect(x + eyeOffset,     y + 2, 2, 2);
+          ctx.fillRect(x + eyeOffset + 3, y + 2, 2, 2);
+          // Animated walk cycle: shift body slightly
+          const walkBob = Math.floor(frameCount / 8) % 2;
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.fillRect(x, y + eh + 3 - walkBob, ew, 1);
+        }
         break;
       }
 
@@ -570,6 +638,10 @@ export class Renderer {
       case 'flyer': {
         const bx = x + 3;
         const by = y + 2;
+        const flyerImg = this.getAsset(themeId, 'enemy_flyer');
+        if (flyerImg) {
+          ctx.drawImage(flyerImg, x - 7, y, entity.width + 14, entity.height);
+        } else {
         const flapOffset = Math.sin(frameCount * 0.25) * 3;
 
         // Left wing arc
@@ -597,38 +669,47 @@ export class Renderer {
         ctx.fillStyle = '#ff4444';
         ctx.fillRect(bx + 1, by + 1, 1, 1);
         ctx.fillRect(bx + 4, by + 1, 1, 1);
+        } // end else (no flyerImg)
         break;
       }
 
       // ── collectible / coin ────────────────────────────────────────────────
       case 'collectible':
       case 'coin': {
-        const spinScale = Math.abs(Math.sin(frameCount * 0.08));
         const coinW = 6;
         const coinH = 6;
         const coinX = x + entity.width / 2;
         const coinY = y + entity.height / 2;
+        const coinImg = this.getAsset(themeId, 'coin');
 
-        ctx.save();
-        ctx.translate(coinX, coinY);
-        ctx.scale(spinScale, 1);
-        ctx.translate(-coinX, -coinY);
+        if (coinImg) {
+          const spinScale = Math.abs(Math.sin(frameCount * 0.08));
+          ctx.save();
+          ctx.translate(coinX, coinY);
+          ctx.scale(spinScale, 1);
+          ctx.translate(-coinX, -coinY);
+          ctx.drawImage(coinImg, x, y, coinW, coinH);
+          ctx.restore();
+        } else {
+          const spinScale = Math.abs(Math.sin(frameCount * 0.08));
+          ctx.save();
+          ctx.translate(coinX, coinY);
+          ctx.scale(spinScale, 1);
+          ctx.translate(-coinX, -coinY);
 
-        // Coin body
-        ctx.fillStyle = palette.coin;
-        ctx.fillRect(x, y, coinW, coinH);
-        // Highlight
-        ctx.fillStyle = this.lighten(palette.coin, 40);
-        ctx.fillRect(x + 1, y + 1, 2, 1);
+          // Coin body
+          ctx.fillStyle = palette.coin;
+          ctx.fillRect(x, y, coinW, coinH);
+          // Highlight
+          ctx.fillStyle = this.lighten(palette.coin, 40);
+          ctx.fillRect(x + 1, y + 1, 2, 1);
 
-        ctx.restore();
+          ctx.restore();
+        }
 
-        // Glow effect (screen-space blending trick with a larger semi-transparent square)
+        // Glow effect always applied
         ctx.fillStyle = `rgba(${this.hexToRgb(palette.coin)},0.15)`;
         ctx.fillRect(x - 2, y - 2, coinW + 4, coinH + 4);
-
-        // Subtle oscillating vertical bob
-        // (Handled by EntitySystem animating entity.y — we just draw at entity.y)
         break;
       }
 
