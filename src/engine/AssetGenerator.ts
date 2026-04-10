@@ -16,7 +16,8 @@ const TYPE_PROMPTS: Record<AssetType, string> = {
   coin:         'collectible coin or gem, glowing, shiny, pickup item',
 };
 
-const IMAGEN_URL = 'https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict';
+// Proxied through Vite dev server to avoid CORS — see vite.config.ts server.proxy
+const REPLICATE_URL = '/api/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions';
 
 export class AssetGenerator {
   constructor(private readonly apiKey: string) {}
@@ -60,21 +61,34 @@ export class AssetGenerator {
   ): Promise<HTMLImageElement | null> {
     try {
       const prompt = this.buildPrompt(type, themeId, description, palette);
-      const res = await fetch(`${IMAGEN_URL}?key=${this.apiKey}`, {
+      const res = await fetch(REPLICATE_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'wait',
+        },
         body: JSON.stringify({
-          instances: [{ prompt }],
-          parameters: { sampleCount: 1, aspectRatio: '1:1' },
+          input: {
+            prompt,
+            aspect_ratio: '1:1',
+            output_format: 'png',
+            output_quality: 80,
+          },
         }),
       });
-      if (!res.ok) return null;
-      const data = await res.json();
-      const b64: string | undefined = data?.predictions?.[0]?.bytesBase64Encoded;
-      if (!b64) return null;
+      if (!res.ok) {
+        console.warn(`Image gen ${type} failed: ${res.status}`, await res.text().catch(() => ''));
+        return null;
+      }
+      const prediction = await res.json();
+      const outputUrl: string | undefined = Array.isArray(prediction.output)
+        ? prediction.output[0]
+        : prediction.output;
+      if (!outputUrl) return null;
 
       const img = new Image();
-      img.src = `data:image/png;base64,${b64}`;
+      img.src = outputUrl;
       await new Promise<void>((resolve, reject) => {
         img.onload  = () => resolve();
         img.onerror = () => reject(new Error('image load failed'));
