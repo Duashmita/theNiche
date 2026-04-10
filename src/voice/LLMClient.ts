@@ -153,7 +153,7 @@ export class LLMClient {
     }
 
     // Abilities
-    const validAbilities = ['double_jump','wall_slide','dash','wall_jump','ground_pound','glide','swim','shoot','grapple','size_change'];
+    const validAbilities = ['double_jump','wall_slide','dash','wall_jump','ground_pound','glide','swim','shoot','grapple','size_change','melee'];
     let abilities = (p.abilities ?? []).filter(a => validAbilities.includes(a));
     if (!abilities.includes('double_jump')) abilities = ['double_jump', ...abilities];
     abilities = abilities.slice(0, 3);
