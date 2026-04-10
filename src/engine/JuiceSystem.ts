@@ -33,7 +33,7 @@ export class JuiceSystem {
   public damageFlash = false;
 
   // ── Private ───────────────────────────────────────────────────────────────────
-  private shakeIntensity = 0;
+  public shakeIntensity = 0;
   private readonly SHAKE_DECAY = 0.88;
   private frozen = false;
   private frozenUntil = 0;

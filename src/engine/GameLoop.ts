@@ -116,29 +116,57 @@ export class GameLoop {
     const dt = Math.min(currentTimestamp - this.lastTimestamp, 50);
     this.lastTimestamp = currentTimestamp;
 
+    const baseSpd = Math.max(0.25, Math.min(2.5, this.state.gameSpeed ?? 1));
+    const ruleSpd = typeof this.state.ruleSpeedMult === 'number' ? this.state.ruleSpeedMult : 1;
+    const simDt = dt * baseSpd * ruleSpd;
+
     // ── 1. Input (always runs) ───────────────────────────────────────────────
     this.input.update();
 
     const frozen = this.juice.isFrozen();
+    const paused = this.state.simulationPaused;
 
     // ── 2. Player ────────────────────────────────────────────────────────────
-    if (!frozen) {
-      this.player.update(this.input, this.events, this.state, this.tilemap);
+    if (!frozen && !paused) {
+      this.player.update(this.input, this.events, this.state, this.tilemap, simDt);
     }
 
     // ── 3. Physics ───────────────────────────────────────────────────────────
-    if (!frozen) {
+    if (!frozen && !paused) {
       this.physics.update(this.player, this.tilemap, this.events, this.state);
     }
 
+    // ── Fall off world → death ────────────────────────────────────────────────
+    if (!frozen && !paused && this.player.alive &&
+        this.player.y > this.tilemap.worldPixelHeight + 12) {
+      this.state.health = 0;
+      this.player.alive = false;
+      this.player.state = 'dead';
+      this.events.emit('player_died', {});
+    }
+
     // ── 4. Entity system ─────────────────────────────────────────────────────
-    if (!frozen) {
-      this.entitySystem.update(this.player, this.tilemap, this.events, dt);
+    if (!frozen && !paused) {
+      this.entitySystem.update(this.player, this.tilemap, this.events, simDt, this.input);
     }
 
     // ── 5. Rules engine ──────────────────────────────────────────────────────
-    if (!frozen) {
-      this.rules.update(this.state, dt);
+    if (!frozen && !paused) {
+      this.rules.update(this.state, simDt);
+    }
+
+    // ── Time limit ────────────────────────────────────────────────────────────
+    if (!frozen && !paused && this.state.timeRemainingMs != null && this.state.timeRemainingMs > 0) {
+      this.state.timeRemainingMs -= simDt;
+      if (this.state.timeRemainingMs <= 0) {
+        this.state.timeRemainingMs = 0;
+        if (this.player.alive) {
+          this.state.health = 0;
+          this.player.alive = false;
+          this.player.state = 'dead';
+          this.events.emit('player_died', {});
+        }
+      }
     }
 
     // ── 6. Camera (tracks player even during freeze so it's ready when unfrozen)
@@ -162,13 +190,15 @@ export class GameLoop {
     this.juice.update(dt);
 
     // ── 9. Voice moment (always runs — manages its own frozen-state logic) ───
-    this.voiceMomentSystem.update(
-      this.events,
-      this.state,
-      this.tilemap,
-      this.entitySystem,
-      dt,
-    );
+    if (!paused) {
+      this.voiceMomentSystem.update(
+        this.events,
+        this.state,
+        this.tilemap,
+        this.entitySystem,
+        simDt,
+      );
+    }
 
     // ── 10. Advance frame counter ────────────────────────────────────────────
     this.state.frameCount++;

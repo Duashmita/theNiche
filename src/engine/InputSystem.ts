@@ -5,17 +5,33 @@ export class InputSystem {
   down = false;
   jump = false;
   dash = false;
+  /** Hold F — fly / anti-gravity (glide ability). */
+  fly = false;
 
   jumpPressedAt = 0;
   jumpBuffered = false;
   dashPressedAt = 0;
   dashBuffered = false;
+  shootPressedAt = 0;
+  shootBuffered = false;
+  meleePressedAt = 0;
+  meleeBuffered = false;
+  grapplePressedAt = 0;
+  grappleBuffered = false;
+  /** Left Shift edge — ground pound (air) or size cycle (ground). */
+  shiftLeftPressedAt = 0;
+  shiftLeftBuffered = false;
 
   private prevJump = false;
   private prevDash = false;
+  private prevShoot = false;
+  private prevMelee = false;
+  private prevGrapple = false;
+  private prevShiftLeft = false;
 
   private readonly JUMP_BUFFER_MS = 100;
   private readonly DASH_BUFFER_MS = 150;
+  private readonly ACTION_BUFFER_MS = 120;
 
   private keysDown = new Set<string>();
 
@@ -29,15 +45,19 @@ export class InputSystem {
   }
 
   update(): void {
-    // ── Keyboard state ───────────────────────────────────────────────────────
     const kLeft  = this.keysDown.has('ArrowLeft')  || this.keysDown.has('KeyA');
     const kRight = this.keysDown.has('ArrowRight') || this.keysDown.has('KeyD');
     const kUp    = this.keysDown.has('ArrowUp')    || this.keysDown.has('KeyW');
     const kDown  = this.keysDown.has('ArrowDown')  || this.keysDown.has('KeyS');
-    const kJump  = this.keysDown.has('Space')      || this.keysDown.has('ArrowUp') || this.keysDown.has('KeyW');
-    const kDash  = this.keysDown.has('ShiftLeft')  || this.keysDown.has('ShiftRight') || this.keysDown.has('KeyX');
+    const kJump  = this.keysDown.has('Space') || this.keysDown.has('ArrowUp') || this.keysDown.has('KeyW');
+    /** Mario-style dash — X (Shift reserved for pound / size). */
+    const kDash  = this.keysDown.has('KeyX');
+    const kFly   = this.keysDown.has('KeyF');
+    const kShoot = this.keysDown.has('KeyZ');
+    const kMelee = this.keysDown.has('KeyE');
+    const kGrapple = this.keysDown.has('KeyG');
+    const kShiftLeft = this.keysDown.has('ShiftLeft');
 
-    // ── Gamepad state ────────────────────────────────────────────────────────
     let gpLeft  = false;
     let gpRight = false;
     let gpUp    = false;
@@ -47,37 +67,31 @@ export class InputSystem {
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     const gp = gamepads[0];
     if (gp) {
-      // Axes: axes[0] is left stick X (-1 = left, 1 = right)
       const axisX = gp.axes[0] ?? 0;
       if (axisX < -0.3) gpLeft  = true;
       if (axisX >  0.3) gpRight = true;
 
-      // D-pad buttons vary by browser mapping (standard mapping)
-      // buttons[12]=up, [13]=down, [14]=left, [15]=right (standard)
       const btn12 = gp.buttons[12];
-      const btn13 = gp.buttons[13];
       const btn14 = gp.buttons[14];
       const btn15 = gp.buttons[15];
       if (btn14 && btn14.pressed) gpLeft  = true;
       if (btn15 && btn15.pressed) gpRight = true;
       if (btn12 && btn12.pressed) gpUp    = true;
 
-      // buttons[0] = A = jump, buttons[1] = B = dash
       const btn0 = gp.buttons[0];
       const btn1 = gp.buttons[1];
       if (btn0 && btn0.pressed) gpJump = true;
       if (btn1 && btn1.pressed) gpDash = true;
     }
 
-    // ── Merge keyboard + gamepad ──────────────────────────────────────────────
     this.left  = kLeft  || gpLeft;
     this.right = kRight || gpRight;
     this.up    = kUp    || gpUp;
     this.down  = kDown;
     this.jump  = kJump  || gpJump;
     this.dash  = kDash  || gpDash;
+    this.fly   = kFly;
 
-    // ── Jump buffer ───────────────────────────────────────────────────────────
     const now = performance.now();
 
     if (this.jump && !this.prevJump) {
@@ -86,12 +100,35 @@ export class InputSystem {
     this.jumpBuffered = (now - this.jumpPressedAt) < this.JUMP_BUFFER_MS;
     this.prevJump = this.jump;
 
-    // ── Dash buffer ───────────────────────────────────────────────────────────
     if (this.dash && !this.prevDash) {
       this.dashPressedAt = now;
     }
     this.dashBuffered = (now - this.dashPressedAt) < this.DASH_BUFFER_MS;
     this.prevDash = this.dash;
+
+    if (kShoot && !this.prevShoot) {
+      this.shootPressedAt = now;
+    }
+    this.shootBuffered = (now - this.shootPressedAt) < this.ACTION_BUFFER_MS;
+    this.prevShoot = kShoot;
+
+    if (kMelee && !this.prevMelee) {
+      this.meleePressedAt = now;
+    }
+    this.meleeBuffered = (now - this.meleePressedAt) < this.ACTION_BUFFER_MS;
+    this.prevMelee = kMelee;
+
+    if (kGrapple && !this.prevGrapple) {
+      this.grapplePressedAt = now;
+    }
+    this.grappleBuffered = (now - this.grapplePressedAt) < this.ACTION_BUFFER_MS;
+    this.prevGrapple = kGrapple;
+
+    if (kShiftLeft && !this.prevShiftLeft) {
+      this.shiftLeftPressedAt = now;
+    }
+    this.shiftLeftBuffered = (now - this.shiftLeftPressedAt) < this.ACTION_BUFFER_MS;
+    this.prevShiftLeft = kShiftLeft;
   }
 
   consumeJump(): void {
@@ -102,5 +139,25 @@ export class InputSystem {
   consumeDash(): void {
     this.dashPressedAt = 0;
     this.dashBuffered = false;
+  }
+
+  consumeShoot(): void {
+    this.shootPressedAt = 0;
+    this.shootBuffered = false;
+  }
+
+  consumeMelee(): void {
+    this.meleePressedAt = 0;
+    this.meleeBuffered = false;
+  }
+
+  consumeGrapple(): void {
+    this.grapplePressedAt = 0;
+    this.grappleBuffered = false;
+  }
+
+  consumeShiftLeft(): void {
+    this.shiftLeftPressedAt = 0;
+    this.shiftLeftBuffered = false;
   }
 }
