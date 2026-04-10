@@ -1,9 +1,9 @@
 import { AssetMap, AssetType, GenerationParams, ThemeId } from '../types';
 
+// Ordered by visual impact — most visible assets load first
 const ASSET_TYPES: AssetType[] = [
-  'ground', 'platform', 'hazard', 'decoration',
-  'player', 'enemy_patrol', 'enemy_flyer', 'coin',
-  'background',
+  'background', 'ground', 'player', 'platform',
+  'enemy_patrol', 'coin', 'enemy_flyer', 'hazard', 'decoration',
 ];
 
 const TYPE_PROMPTS: Record<AssetType, string> = {
@@ -31,16 +31,28 @@ export class AssetGenerator {
     return this.apiKey.length > 10;
   }
 
-  async generate(params: GenerationParams): Promise<AssetMap> {
-    const results = await Promise.allSettled(
-      ASSET_TYPES.map(type => this.generateOne(type, params.theme, params.description, params.palette, params.assetDescriptions)),
-    );
+  /** Generate all assets sequentially (rate limit: burst=1, 6/min).
+   *  Calls onProgress after each asset so the renderer can patch immediately. */
+  async generate(
+    params: GenerationParams,
+    onProgress?: (partial: AssetMap) => void,
+  ): Promise<AssetMap> {
     const map: AssetMap = new Map();
-    results.forEach((result, i) => {
-      if (result.status === 'fulfilled' && result.value) {
-        map.set(`${params.theme}/${ASSET_TYPES[i]}`, result.value);
+    for (let i = 0; i < ASSET_TYPES.length; i++) {
+      const type = ASSET_TYPES[i];
+      const img = await this.generateOne(
+        type, params.theme, params.description, params.palette, params.assetDescriptions,
+      );
+      if (img) {
+        const key = `${params.theme}/${type}`;
+        map.set(key, img);
+        onProgress?.(new Map([[key, img]]));
       }
-    });
+      // 11s gap between requests — Replicate free tier: burst=1, 6 req/min
+      if (i < ASSET_TYPES.length - 1) {
+        await new Promise(r => setTimeout(r, 11_000));
+      }
+    }
     return map;
   }
 
