@@ -22,15 +22,16 @@ export class LLMClient {
 
     const text = await this.callGemini(
       CREATION_PROMPT + '\n\nPlayer description: "' + description + '"',
-      2048,
+      4096,
       0.9,
     );
 
-    let raw: Partial<GenerationParams>;
+    let raw: Partial<GenerationParams> = {};
     try {
       raw = JSON.parse(text);
     } catch {
-      throw new Error('Gemini returned invalid JSON for game params');
+      // Non-fatal: validateParams fills in all missing fields with sensible defaults
+      console.warn('Gemini returned non-JSON for game params — using defaults. Raw:', text.slice(0, 400));
     }
 
     return this.validateParams(raw, description);
@@ -60,7 +61,8 @@ export class LLMClient {
     try {
       response = JSON.parse(text);
     } catch {
-      throw new Error('Gemini returned invalid JSON for voice moment');
+      console.warn('Gemini returned non-JSON for voice moment — using empty response. Raw:', text.slice(0, 200));
+      response = { voiceMomentId: moment.id, interpretation: '', stateChanges: [] };
     }
 
     // Ensure voiceMomentId matches

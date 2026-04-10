@@ -48,7 +48,7 @@ const llmClient       = new LLMClient(
   (import.meta as any).env?.VITE_GEMINI_KEY ?? '',
 );
 const assetGenerator  = new AssetGenerator(
-  (import.meta as any).env?.VITE_GEMINI_KEY ?? '',
+  (import.meta as any).env?.VITE_REPLICATE_KEY ?? '',
 );
 
 const loadingScreen       = new LoadingScreen(nativeCanvas);
