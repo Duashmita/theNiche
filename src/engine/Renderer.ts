@@ -123,8 +123,35 @@ export class Renderer {
     // 6. Player
     this.drawPlayer(ctx, player, state, palette);
 
+    // ── Grapple cable ─────────────────────────────────────────────────────────
+    if ((player as any).grappleActive) {
+      const gx = (player as any).grappleX;
+      const gy = (player as any).grappleY;
+      const px = player.x + player.width  / 2;
+      const py = player.y + player.height / 2;
+
+      ctx.save();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = '#ffffff'; // White cable
+      ctx.lineWidth   = 1;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(gx, gy);
+      ctx.stroke();
+      ctx.restore();
+
+      // Hook dot
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(gx, gy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // 7. Restore from camera transform
     ctx.restore();
+
+    this.drawBrightnessOverlay(ctx, state);
 
     // 8. Particles — screen-space (no camera offset)
     this.drawParticles(ctx, juice.particles, camera);
@@ -491,7 +518,38 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
+    // ── Melee sword arc ───────────────────────────────────────────────────
+    const mt = (player as { meleeTimer?: number }).meleeTimer ?? 0;
+    if (mt > 0) {
+      const sx = player.facing === 'right' ? player.x + bw - 1 : player.x - 10;
+      const sy = player.y + 4;
+      ctx.strokeStyle = '#ddeeff';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = Math.min(1, mt / 120);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy + 8);
+      ctx.lineTo(sx + (player.facing === 'right' ? 14 : -14), sy + 2);
+      ctx.lineTo(sx + (player.facing === 'right' ? 10 : -10), sy - 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(200,220,255,0.35)';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
+  }
+
+  private drawBrightnessOverlay(ctx: CanvasRenderingContext2D, state: SharedState): void {
+    const b = state.screenBrightness ?? 1;
+    const W = this.nativeCanvas.width;
+    const H = this.nativeCanvas.height;
+    if (b < 0.995) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.85, 1 - b)})`;
+      ctx.fillRect(0, 0, W, H);
+    } else if (b > 1.005) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.45, (b - 1) * 0.9)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -508,26 +566,94 @@ export class Renderer {
 
     switch (archetype) {
 
-      // ── patrol: crab-like ground enemy ───────────────────────────────────
+      // ── patrol: Goomba-style mushroom ─────────────────────────────────────
       case 'patrol': {
         const ew = 12;
-        const eh = 7;
-        // Body
+        const eh = 8;
+        const bob = Math.floor(frameCount / 6) % 2;
+        const bx = x;
+        const by = y + bob;
+        ctx.fillStyle = this.darken(palette.enemy, 25);
+        ctx.beginPath();
+        ctx.ellipse(bx + ew / 2, by + eh - 2, ew / 2 - 1, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.fillStyle = palette.enemy;
-        ctx.fillRect(x, y, ew, eh);
-        // Leg nubs (bottom corners)
-        ctx.fillStyle = this.darken(palette.enemy, 30);
-        ctx.fillRect(x,          y + eh, 2, 3);
-        ctx.fillRect(x + ew - 2, y + eh, 2, 3);
-        // Eye dots (facing direction)
-        ctx.fillStyle = '#ffffff';
-        const eyeOffset = direction === 1 ? ew - 3 : 1;
-        ctx.fillRect(x + eyeOffset,     y + 2, 2, 2);
-        ctx.fillRect(x + eyeOffset + 3, y + 2, 2, 2);
-        // Animated walk cycle: shift body slightly
-        const walkBob = Math.floor(frameCount / 8) % 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.fillRect(x, y + eh + 3 - walkBob, ew, 1);
+        ctx.beginPath();
+        ctx.ellipse(bx + ew / 2, by + 4, ew / 2, 5, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = this.lighten(palette.enemy, 35);
+        ctx.beginPath();
+        ctx.ellipse(bx + ew / 2, by + 5, 4, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff7e6';
+        const eyeX = direction === 1 ? bx + ew - 5 : bx + 2;
+        ctx.fillRect(eyeX, by + 2, 2, 2);
+        ctx.fillRect(eyeX + 3, by + 2, 2, 2);
+        ctx.fillStyle = '#1a1020';
+        ctx.fillRect(eyeX + (direction === 1 ? 0 : 0), by + 3, 1, 1);
+        ctx.fillRect(eyeX + 3 + (direction === 1 ? 0 : 0), by + 3, 1, 1);
+        break;
+      }
+
+      // ── boss: large multi-phase enemy ─────────────────────────────────────
+
+      case 'boss': {
+        const bw = entity.width;
+        const bh = entity.height;
+        const phase = (entity.params.bossPhase as number) ?? 1;
+
+        // Body — colour shifts with phase
+        const bodyColors = ['#cc4422', '#cc2244', '#ff2266'];
+        ctx.fillStyle = bodyColors[phase - 1] ?? '#cc4422';
+        ctx.fillRect(x, y, bw, bh);
+
+        // Phase-indicator border
+        ctx.strokeStyle = phase === 3 ? '#ff66aa' : phase === 2 ? '#ff4466' : '#cc4422';
+        ctx.lineWidth   = phase;
+        ctx.strokeRect(x, y, bw, bh);
+
+        // Health bar
+        const hpRatio = Math.max(0, Math.min(entity.health / 10, 1));
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x, y - 6, bw, 3);
+        ctx.fillStyle = hpRatio > 0.5 ? '#44ff44' : hpRatio > 0.25 ? '#ffaa00' : '#ff4444';
+        ctx.fillRect(x, y - 6, bw * hpRatio, 3);
+
+        // Slam warning (flash during slamTimer)
+        if ((entity.params.slamTimer as number) > 0) {
+          ctx.fillStyle = 'rgba(255,200,0,0.3)';
+          ctx.fillRect(x, y, bw, bh);
+        }
+
+        // Charge trail
+        if ((entity.params.chargeTimer as number) > 0) {
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle   = '#ff4422';
+          ctx.fillRect(x - entity.direction * 12, y + 4, bw, bh - 8);
+          ctx.globalAlpha = 1;
+        }
+
+        // Eyes
+        ctx.fillStyle = '#ffeeaa';
+        ctx.fillRect(x + bw / 2 - 4, y + 6, 3, 3);
+        ctx.fillRect(x + bw / 2 + 2, y + 6, 3, 3);
+        break;
+      }
+
+      case 'projectile': {
+        ctx.fillStyle = '#ff8844';
+        ctx.beginPath();
+        ctx.arc(x + entity.width / 2, y + entity.height / 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        const pvx = (entity.params.vx as number) ?? 0;
+        const pvy = (entity.params.vy as number) ?? 0;
+        ctx.strokeStyle = 'rgba(255,136,68,0.4)';
+        ctx.lineWidth   = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + entity.width / 2, y + entity.height / 2);
+        ctx.lineTo(x + entity.width / 2 - pvx * 3, y + entity.height / 2 - pvy * 3);
+        ctx.stroke();
         break;
       }
 
@@ -687,24 +813,6 @@ export class Renderer {
         break;
       }
 
-      // ── boss: large multi-phase enemy ─────────────────────────────────────
-      case 'boss': {
-        const bw = entity.width;
-        const bh = entity.height;
-        const pulse = Math.sin(frameCount * 0.05) * 0.2 + 0.8;
-        ctx.globalAlpha = pulse;
-        ctx.fillStyle = this.lighten(palette.enemy, 10);
-        ctx.fillRect(x, y, bw, bh);
-        ctx.globalAlpha = 1;
-        // Health bar above
-        const hpRatio = clamp(entity.health / 10, 0, 1);
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(x, y - 5, bw, 3);
-        ctx.fillStyle = hpRatio > 0.5 ? '#44ff44' : '#ff4444';
-        ctx.fillRect(x, y - 5, bw * hpRatio, 3);
-        break;
-      }
-
       // ── NPC: friendly character ───────────────────────────────────────────
       case 'npc': {
         // Simple humanoid
@@ -776,6 +884,12 @@ export class Renderer {
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
     ctx.fillText(String(state.score).padStart(6, '0'), W - 4, 4);
+
+    if (state.timeRemainingMs != null && state.timeRemainingMs > 0) {
+      const sec = Math.ceil(state.timeRemainingMs / 1000);
+      ctx.fillStyle = sec < 30 ? '#ff6666' : '#aaffcc';
+      ctx.fillText(`${sec}s`, W - 4, 12);
+    }
 
     // ── Phase badge / REC indicator (top-center) ──────────────────────────
     if (state.phase === 'voice_moment') {

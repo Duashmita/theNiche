@@ -25,7 +25,8 @@ export type ThemeId =
 
 export type AbilityId =
   | 'double_jump' | 'wall_slide' | 'dash' | 'wall_jump'
-  | 'ground_pound' | 'glide' | 'swim' | 'shoot' | 'grapple' | 'size_change';
+  | 'ground_pound' | 'glide' | 'swim' | 'shoot' | 'grapple' | 'size_change'
+  | 'melee';
 
 export type RuleId =
   | 'gravity_flip' | 'floor_decay' | 'size_change' | 'speed_boost'
@@ -102,6 +103,8 @@ export interface GameSpec {
     name: string;
     description: string;
     difficulty: number;   // 0.0 – 1.0
+    /** Simulation speed multiplier (1 = normal). */
+    gameSpeed?: number;
   };
   display: {
     nativeWidth: number;    // e.g. 320
@@ -141,6 +144,10 @@ export interface GenerationParams {
   voiceMomentCount: number;
   backgroundColor: string;
   palette: string[];
+  /** Starting hearts (1–5). */
+  startingHealth?: number;
+  /** Global simulation speed (0.25–2.5). */
+  gameSpeed?: number;
 }
 
 // ─── Runtime tile info (returned by Tilemap.getTilesInRect) ───────────────────
@@ -233,6 +240,20 @@ export interface SharedState {
   triggeredTiles: Set<string>;   // 'col,row' keys of already-fired triggers
   activeWeapon: string | null;
   gameOver: boolean;
+  /** Multiplies simulation dt (player, enemies, rules, projectiles). */
+  gameSpeed: number;
+  /** When true, gameplay systems do not advance (world settings open). */
+  simulationPaused: boolean;
+  /** 0.35–1.5 — combined display brightness (options × rules). */
+  screenBrightness: number;
+  /** Horizontal wind force added to player (from wind rule). */
+  windX: number;
+  /** Extra speed mult from speed_boost rule (stacks with gameSpeed). */
+  ruleSpeedMult: number;
+  /** Countdown in ms when time_limit rule active; null = no limit. */
+  timeRemainingMs: number | null;
+  /** vision_limit / darkness: multiplies UI brightness (0.4–1). */
+  ruleBrightnessFactor: number;
 }
 
 // ─── Theme colour palettes (used by Renderer, no image assets needed) ─────────
@@ -261,22 +282,22 @@ export const THEME_PALETTES: Record<ThemeId, {
     trigger: '#55ffaa', door: '#7744aa',
   },
   space: {
-    bg: '#03030a', ground: '#1a2a3a', groundTop: '#2a4a6a',
-    platform: '#1a3a5a', hazard: '#cc6600',
-    player: '#88eeff', enemy: '#ff6622', coin: '#ffee55',
-    trigger: '#44eeff', door: '#6655cc',
+    bg: '#020208', ground: '#12182a', groundTop: '#1e3a6a',
+    platform: '#162040', hazard: '#ff6a00',
+    player: '#a8f0ff', enemy: '#ff5533', coin: '#ffe94a',
+    trigger: '#66ccff', door: '#8866ff',
   },
   underwater: {
-    bg: '#041020', ground: '#0a3a5a', groundTop: '#1a6a8a',
-    platform: '#0a4a6a', hazard: '#cc3300',
-    player: '#aaffee', enemy: '#ff4422', coin: '#ffdd44',
-    trigger: '#44ffee', door: '#5544bb',
+    bg: '#021018', ground: '#06324a', groundTop: '#0a5c7a',
+    platform: '#084a62', hazard: '#ff4400',
+    player: '#7fffd4', enemy: '#ff6644', coin: '#ffd060',
+    trigger: '#40e0d0', door: '#6a5acd',
   },
   city: {
-    bg: '#0a0a14', ground: '#2a2a3a', groundTop: '#4a4a5a',
-    platform: '#3a3a4a', hazard: '#cc0000',
-    player: '#ccddff', enemy: '#ff3344', coin: '#ffcc33',
-    trigger: '#33ffcc', door: '#6644aa',
+    bg: '#060210', ground: '#2a0a3c', groundTop: '#4a148c',
+    platform: '#1a1030', hazard: '#ff0055',
+    player: '#00f5ff', enemy: '#ff2a6b', coin: '#ffee00',
+    trigger: '#ff00aa', door: '#aa00ff',
   },
   ice: {
     bg: '#080f1a', ground: '#3a6a8a', groundTop: '#6aaabf',
