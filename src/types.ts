@@ -34,6 +34,17 @@ export type RuleId =
 
 export type EnemyArchetype = 'patrol' | 'flyer' | 'chaser' | 'turret' | 'boss';
 
+/** Combat classification used by EnemyDirector to describe spawned behaviour. */
+export type EnemyType = 'melee' | 'ranged' | 'tank' | 'hybrid';
+
+/** Parameters produced by EnemyDirector and consumed by EntitySystem spawn helpers. */
+export interface SpawnParams {
+  count: number;
+  speed: number;
+  canShoot: boolean;
+  aggression: number;
+}
+
 export type MaskType =
   | 'key_fetch' | 'enemy_wave' | 'traversal' | 'craft_animation' | 'npc_dialogue';
 
@@ -217,7 +228,8 @@ export enum VoiceMomentPhase {
 export interface StateChange {
   action:
     | 'fill_room' | 'spawn_enemies' | 'add_platforms'
-    | 'give_weapon' | 'modify_terrain' | 'change_music' | 'spawn_boss';
+    | 'give_weapon' | 'modify_terrain' | 'change_music' | 'spawn_boss'
+    | 'unlock_ability' | 'restore_energy';
   [key: string]: unknown;
 }
 
@@ -256,6 +268,41 @@ export interface SharedState {
   timeRemainingMs: number | null;
   /** vision_limit / darkness: multiplies UI brightness (0.4–1). */
   ruleBrightnessFactor: number;
+
+  // ── Player progression ──────────────────────────────────────────────────────
+  playerLevel: number;
+  playerXP: number;
+  xpToNext: number;
+  /** 0–1 adaptive skill metric derived from health, deaths, and time. */
+  playerSkillRating: number;
+  maxEnergy: number;
+  energy: number;
+
+  // ── Enemy scaling ───────────────────────────────────────────────────────────
+  /** Continuously increasing difficulty level for enemies. */
+  enemyLevel: number;
+  /** 0.5–1.2 sinusoidal wave intensity factor. */
+  enemyIntensity: number;
+  spawnBudget: number;
+
+  // ── Combat state ────────────────────────────────────────────────────────────
+  inCombat: boolean;
+  /** performance.now() of the last time the player was hit. */
+  lastHitTime: number;
+  /** performance.now() of the last time an enemy was within threat range. */
+  lastEnemyNearbyTime: number;
+  /** HP regenerated per second when out of combat. */
+  healthRegenRate: number;
+
+  // ── Section tracking (feeds skill rating) ───────────────────────────────────
+  deathsThisSection: number;
+  sectionStartTimeMs: number;
+
+  // ── Economy ─────────────────────────────────────────────────────────────────
+  currency: number;
+
+  // ── Transient UI ────────────────────────────────────────────────────────────
+  levelUpToast: { level: number; displayUntil: number } | null;
 }
 
 // ─── Asset generation ─────────────────────────────────────────────────────────

@@ -18,6 +18,10 @@ import { VoiceMomentOverlay } from './ui/VoiceMomentOverlay';
 import { SharedState, GameSpec, ThemeId, StateChange, AssetMap, TileType } from './types';
 import { WorldSettingsPanel } from './ui/WorldSettingsPanel';
 import { ProceduralGenerator } from './generator/ProceduralGenerator';
+import { PlayerProgression } from './engine/PlayerProgression';
+import { EnemyDirector } from './engine/EnemyDirector';
+import { CombatDirector } from './engine/CombatDirector';
+import { lerp } from './utils/math';
 
 // ─── HTML elements ─────────────────────────────────────────────────────────────
 const displayCanvas   = document.getElementById('display-canvas') as HTMLCanvasElement;
@@ -56,6 +60,11 @@ const assetGenerator  = new AssetGenerator(
 const loadingScreen       = new LoadingScreen(nativeCanvas);
 const voiceMomentOverlay  = new VoiceMomentOverlay(uiOverlay, events);
 
+const playerProgression = new PlayerProgression();
+const enemyDirector     = new EnemyDirector();
+const combatDirector    = new CombatDirector();
+let progressionTickAccum = 0;
+
 // ─── Shared mutable game state ─────────────────────────────────────────────────
 let uiBrightness = 1;
 
@@ -77,6 +86,33 @@ const state: SharedState = {
   ruleSpeedMult: 1,
   timeRemainingMs: null,
   ruleBrightnessFactor: 1,
+
+  // ── Player progression ──────────────────────────────────────────────────
+  playerLevel:       1,
+  playerXP:          0,
+  xpToNext:          100,
+  playerSkillRating: 0.5,
+  maxEnergy:         100,
+  energy:            100,
+
+  // ── Enemy scaling ───────────────────────────────────────────────────────
+  enemyLevel:     1,
+  enemyIntensity: 0.7,
+  spawnBudget:    5,
+
+  // ── Combat state ────────────────────────────────────────────────────────
+  inCombat:            false,
+  lastHitTime:         0,
+  lastEnemyNearbyTime: 0,
+  healthRegenRate:     1,
+
+  // ── Section tracking ────────────────────────────────────────────────────
+  deathsThisSection: 0,
+  sectionStartTimeMs: performance.now(),
+
+  // ── Economy / UI ────────────────────────────────────────────────────────
+  currency:     0,
+  levelUpToast: null,
 };
 
 function applyRuleDerivedState(spec: GameSpec): void {
@@ -131,9 +167,34 @@ const vmStub = {
   onPlayerEnteredTrigger: () => {},
 };
 
-// Proxy that forwards to real system once loaded
+// Proxy that forwards to real system once loaded, and ticks directors every frame
 const voiceMomentProxy = {
   update(events: EventBus, state: SharedState, tilemap: Tilemap, entitySystem: EntitySystem, dt: number) {
+    if (state.phase === 'gameplay') {
+      const now = performance.now();
+
+      // Detect nearby enemies → feed combat director
+      const nearbyEnemy = entitySystem.entities.some(
+        (e) => e.active && e.type === 'enemy' && e.archetype !== 'projectile' &&
+                Math.hypot(e.x - player.x, e.y - player.y) < 100,
+      );
+      if (nearbyEnemy) state.lastEnemyNearbyTime = now;
+
+      // Combat director — updates state.inCombat
+      combatDirector.update(state, now);
+
+      // Intensity wave — every frame
+      enemyDirector.updateIntensity(state, now);
+
+      // Skill rating + enemy level — every 2 s
+      progressionTickAccum += dt;
+      if (progressionTickAccum >= 2000) {
+        progressionTickAccum = 0;
+        playerProgression.updateSkillRating(state);
+        enemyDirector.updateEnemyLevel(state);
+      }
+    }
+
     voiceMomentSystemModule?.update(events, state, tilemap, entitySystem, dt);
   },
 };
@@ -161,6 +222,25 @@ function initGame(spec: GameSpec): void {
   state.triggeredTiles.clear();
   state.simulationPaused = false;
 
+  // ── Reset progression on new game ─────────────────────────────────────
+  state.playerLevel       = 1;
+  state.playerXP          = 0;
+  state.xpToNext          = 100;
+  state.playerSkillRating = 0.5;
+  state.maxEnergy         = 100;
+  state.energy            = 100;
+  state.enemyLevel        = 1;
+  state.enemyIntensity    = 0.7;
+  state.inCombat          = false;
+  state.lastHitTime       = 0;
+  state.lastEnemyNearbyTime = 0;
+  state.healthRegenRate   = 1;
+  state.deathsThisSection = 0;
+  state.sectionStartTimeMs = performance.now();
+  state.currency          = 0;
+  state.levelUpToast      = null;
+  progressionTickAccum    = 0;
+
   applyRuleDerivedState(spec);
 
   tilemap.init(spec);
@@ -182,6 +262,23 @@ function initGame(spec: GameSpec): void {
 // ─── Listen for player events that need cross-system handling ──────────────────
 events.on('player_damaged_by_enemy', () => {
   player.takeDamage(events, state);
+  state.lastHitTime = performance.now();
+});
+
+events.on('enemy_killed', (data: any) => {
+  // XP reward
+  playerProgression.gainXP(10, state);
+  // Health orb drop — drops less often at higher enemy levels
+  const dropChance = lerp(0.3, 0.1, Math.min(1, state.enemyLevel / 10));
+  if (Math.random() < dropChance && data?.entity) {
+    entitySystem.spawnHealthOrb(data.entity.x, data.entity.y);
+  }
+  state.score += 50;
+});
+
+events.on('health_orb_picked_up', () => {
+  state.health = Math.min(state.maxHealth, state.health + 1);
+  events.emit('play_sound', { id: 'coin' });
 });
 
 events.on('player_stomp_bounce', () => {
@@ -215,8 +312,9 @@ events.on('voice_moment_revealed', (payload: { response: { stateChanges: StateCh
 
 events.on('boss_summon_minions', (data: any) => {
   if (!data?.entity) return;
-  const bossX = data.entity.x;
-  entitySystem.spawnMaskEnemies(data.count, bossX, tilemap);
+  const bossX   = data.entity.x;
+  const params  = enemyDirector.getSpawnParams(state);
+  entitySystem.spawnMaskEnemies(data.count, bossX, tilemap, params);
 });
 
 events.on('boss_slam_landed', (data: any) => {
@@ -230,6 +328,7 @@ events.on('boss_slam_landed', (data: any) => {
 });
 
 events.on('player_died', () => {
+  state.deathsThisSection++;
   state.gameOver = true;
   state.phase    = 'game_over';
   // Auto-respawn after 1.5 seconds

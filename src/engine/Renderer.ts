@@ -708,6 +708,24 @@ export class Renderer {
         break;
       }
 
+      case 'health_orb': {
+        // Pulsing green orb
+        const pulse = 0.7 + Math.sin(frameCount * 0.18) * 0.3;
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.fillStyle = 'rgba(0,255,100,0.25)';
+        ctx.beginPath();
+        ctx.arc(x + entity.width / 2, y + entity.height / 2, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#44ff88';
+        ctx.beginPath();
+        ctx.arc(x + entity.width / 2, y + entity.height / 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+
       case 'projectile': {
         ctx.fillStyle = '#ff8844';
         ctx.beginPath();
@@ -949,15 +967,60 @@ export class Renderer {
     const W = this.nativeCanvas.width;   // 320
     const H = this.nativeCanvas.height;  // 180
 
+    // ── Combat screen-edge glow ───────────────────────────────────────────
+    if (state.inCombat) {
+      const grd = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.8);
+      grd.addColorStop(0, 'rgba(0,0,0,0)');
+      grd.addColorStop(1, 'rgba(180,0,0,0.35)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, W, H);
+    }
+
     // ── Health hearts (top-left) ──────────────────────────────────────────
-    const maxHearts = state.maxHealth;
-    const curHearts = state.health;
+    const maxHearts = Math.min(state.maxHealth, 10); // cap display at 10
+    const curHearts = Math.floor(state.health);
     for (let i = 0; i < maxHearts; i++) {
-      const hx = 4 + i * 9;
+      const hx = 4 + i * 8;
       const hy = 4;
       const filled = i < curHearts;
       this.drawHeart(ctx, hx, hy, filled);
     }
+    // Show numeric health when maxHealth > 10
+    if (state.maxHealth > 10) {
+      ctx.fillStyle = '#ff8888';
+      ctx.font = '5px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${Math.floor(state.health)}/${state.maxHealth}`, 4, 4);
+    }
+
+    // ── XP bar ────────────────────────────────────────────────────────────
+    const barX   = 4;
+    const xpBarY = 13;
+    const barW   = 60;
+    const barH   = 2;
+    const xpRatio = state.xpToNext > 0 ? clamp(state.playerXP / state.xpToNext, 0, 1) : 0;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(barX, xpBarY, barW, barH);
+    ctx.fillStyle = '#8866ff';
+    ctx.fillRect(barX, xpBarY, Math.floor(barW * xpRatio), barH);
+
+    // Level label inline with XP bar
+    ctx.fillStyle = '#ccaaff';
+    ctx.font = '4px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`LV${state.playerLevel}`, barX + barW + 2, xpBarY - 1);
+
+    // ── Energy bar ────────────────────────────────────────────────────────
+    const enBarY  = xpBarY + 4;
+    const enRatio = state.maxEnergy > 0 ? clamp(state.energy / state.maxEnergy, 0, 1) : 0;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(barX, enBarY, barW, barH);
+    ctx.fillStyle = '#44aaff';
+    ctx.fillRect(barX, enBarY, Math.floor(barW * enRatio), barH);
 
     // ── Score (top-right) ─────────────────────────────────────────────────
     ctx.fillStyle = '#ffffff';
@@ -1011,6 +1074,32 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(prompt, W / 2, H - 9);
+    }
+
+    // ── Level-up toast (center-screen) ────────────────────────────────────
+    if (state.levelUpToast) {
+      const now = performance.now();
+      if (now < state.levelUpToast.displayUntil) {
+        const remaining = state.levelUpToast.displayUntil - now;
+        const alpha = Math.min(1, remaining / 400);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        // Background pill
+        ctx.fillStyle = '#1a0040';
+        ctx.fillRect(W / 2 - 40, H / 2 - 24, 80, 14);
+        ctx.strokeStyle = '#cc88ff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(W / 2 - 40, H / 2 - 24, 80, 14);
+        // Text
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = '6px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`LEVEL UP  ${state.levelUpToast.level}`, W / 2, H / 2 - 17);
+        ctx.restore();
+      } else {
+        state.levelUpToast = null;
+      }
     }
 
     // Reset alignment for next frame

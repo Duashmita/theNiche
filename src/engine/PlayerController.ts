@@ -411,6 +411,17 @@ export class PlayerController {
     this.meleeTimer = Math.max(0, this.meleeTimer - dt);
     this.shootCooldown = Math.max(0, this.shootCooldown - dt);
 
+    // ── Health + energy regen (out of combat) ─────────────────────────────────
+    if (!state.inCombat) {
+      if (state.health < state.maxHealth) {
+        const regen = (state.healthRegenRate ?? 1) * dt / 1000;
+        state.health = Math.min(state.maxHealth, state.health + regen);
+      }
+      if (state.energy < state.maxEnergy) {
+        state.energy = Math.min(state.maxEnergy, state.energy + 5 * dt / 1000);
+      }
+    }
+
     // ── STATE MACHINE ─────────────────────────────────────────────────────────
     if (this.isGroundPounding)        this.state = 'falling';
     else if (this.grappleActive)      this.state = 'jumping';

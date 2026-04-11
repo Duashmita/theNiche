@@ -1,4 +1,4 @@
-import { Entity, EntitySpec } from '../types';
+import { Entity, EntitySpec, SpawnParams } from '../types';
 import { EventBus } from './EventBus';
 import { InputSystem } from './InputSystem';
 import { PlayerController } from './PlayerController';
@@ -254,6 +254,14 @@ export class EntitySystem {
           events.emit('checkpoint_reached', { entity });
         }
       }
+
+      if (entity.archetype === 'health_orb' && entity.active) {
+        if (overlapsRect(player.x, player.y, player.width, player.height,
+                         entity.x, entity.y, entity.width, entity.height)) {
+          entity.active = false;
+          events.emit('health_orb_picked_up', { entity });
+        }
+      }
     }
 
     // Remove inactive entities at end of frame
@@ -484,7 +492,7 @@ export class EntitySystem {
     this.entities.push(entity);
   }
 
-  spawnMaskEnemies(count: number, nearX: number, tilemap: TilemapLike): void {
+  spawnMaskEnemies(count: number, nearX: number, tilemap: TilemapLike, params?: SpawnParams): void {
     const tileSize = tilemap.tileSize;
     // Spread enemies across a ~200px window centred on nearX
     const spread = 200;
@@ -492,10 +500,9 @@ export class EntitySystem {
 
     for (let i = 0; i < count; i++) {
       const px = startX + randomFloat(0, spread);
-      // Place at a y that puts the enemy roughly 3 tiles above the world bottom
-      const py = Math.max(0, tilemap.worldPixelWidth * 0); // start near top; tilemap handles clamping
       const placedY = 3 * tileSize; // safe default — entity will fall to ground
 
+      const baseSpeed = params ? 1.5 * params.speed : 1.5;
       const entity = makeEntity({
         id: nextId(),
         type: 'enemy',
@@ -504,14 +511,29 @@ export class EntitySystem {
         y: placedY,
         width: 12,
         height: 8,
-        speed: 1.5,
-        health: 2,
+        speed: baseSpeed,
+        health: params && params.aggression > 0.3 ? 3 : 2,
         direction: (Math.random() > 0.5 ? 1 : -1) as 1 | -1,
         params: {},
       });
 
       this.entities.push(entity);
     }
+  }
+
+  spawnHealthOrb(x: number, y: number): void {
+    const entity = makeEntity({
+      id: nextId(),
+      type: 'collectible',
+      archetype: 'health_orb',
+      x,
+      y,
+      width: 5,
+      height: 5,
+      health: 1,
+      params: { isHealthOrb: true },
+    });
+    this.entities.push(entity);
   }
 
   spawnKey(nearX: number, tilemap: TilemapLike): Entity {
