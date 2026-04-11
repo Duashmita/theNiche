@@ -445,15 +445,16 @@ async function generateGame(description: string): Promise<void> {
     const generator = new ProceduralGenerator();
     const spec = generator.generate(params);
 
-    loadingScreen.update('Painting the world...');
-    const assetMap: AssetMap = assetGenerator.hasKey()
-      ? await assetGenerator.generate(params)
-      : new Map();
-
+    // Start game immediately — assets stream in behind the scenes
     state.phase = 'gameplay';
     cancelAnimationFrame(loadingRaf);
     initGame(spec);
-    renderer.setAssets(assetMap);
+
+    // Fire asset generation without blocking; patch renderer as each image arrives
+    if (assetGenerator.hasKey()) {
+      assetGenerator.generate(params, (partial) => renderer.patchAssets(partial))
+        .catch(() => { /* silent — game already running with procedural fallback */ });
+    }
     transcriptEl.textContent = `"${spec.meta.name}" — ${spec.meta.description}`;
   } catch (err) {
     console.error('Generation failed:', err);

@@ -1,0 +1,4 @@
+/npm
+/bin
+.env
+/node_modules
