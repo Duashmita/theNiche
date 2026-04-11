@@ -13,26 +13,49 @@ import { AudioManager }     from './engine/AudioManager';
 import { VoicePipeline }    from './voice/VoicePipeline';
 import { LLMClient }        from './voice/LLMClient';
 import { AssetGenerator }   from './engine/AssetGenerator';
-import { LoadingScreen }    from './ui/LoadingScreen';
 import { VoiceMomentOverlay } from './ui/VoiceMomentOverlay';
-import { SharedState, GameSpec, ThemeId, StateChange, AssetMap, TileType } from './types';
+import {
+  SharedState,
+  GameSpec,
+  ThemeId,
+  StateChange,
+  GenerationParams,
+  LayoutType,
+  TileType,
+} from './types';
 import { WorldSettingsPanel } from './ui/WorldSettingsPanel';
 import { ProceduralGenerator } from './generator/ProceduralGenerator';
+import { ModifierDock } from './ui/ModifierDock';
+import {
+  pushLocalSave,
+  downloadSaveJson,
+  parseSaveFile,
+  type GameSaveFileV1,
+} from './save/gameSave';
 
 // ─── HTML elements ─────────────────────────────────────────────────────────────
-const displayCanvas   = document.getElementById('display-canvas') as HTMLCanvasElement;
-const uiOverlay       = document.getElementById('ui-overlay')     as HTMLDivElement;
-const micBtn          = document.getElementById('mic-btn')        as HTMLButtonElement;
-const textInput       = document.getElementById('text-input')     as HTMLInputElement;
-const submitBtn       = document.getElementById('submit-btn')     as HTMLButtonElement;
-const transcriptEl    = document.getElementById('transcript')     as HTMLDivElement;
+const mainMenu        = document.getElementById('main-menu') as HTMLDivElement | null;
+const playRoot        = document.getElementById('play-root') as HTMLDivElement | null;
+const menuCreateBtn   = document.getElementById('menu-create-btn') as HTMLButtonElement | null;
+const menuLoadBtn     = document.getElementById('menu-load-btn') as HTMLButtonElement | null;
+const fileLoadInput   = document.getElementById('file-load-input') as HTMLInputElement | null;
+const loadingOverlay  = document.getElementById('loading-overlay') as HTMLDivElement | null;
+const loadingTitleEl  = document.getElementById('loading-title') as HTMLDivElement | null;
+const loadingDetailEl = document.getElementById('loading-detail') as HTMLDivElement | null;
+const gameContainerEl = document.getElementById('game-container') as HTMLDivElement | null;
 
-// ─── Native canvas (320×180) drawn to, then scaled to display canvas ───────────
+const displayCanvas   = document.getElementById('display-canvas') as HTMLCanvasElement;
+const uiOverlay       = document.getElementById('ui-overlay') as HTMLDivElement;
+const micBtn          = document.getElementById('mic-btn') as HTMLButtonElement;
+const textInput       = document.getElementById('text-input') as HTMLInputElement;
+const submitBtn       = document.getElementById('submit-btn') as HTMLButtonElement;
+const createNewBtn    = document.getElementById('create-new-btn') as HTMLButtonElement | null;
+const transcriptEl    = document.getElementById('transcript') as HTMLDivElement;
+
 const nativeCanvas = document.createElement('canvas');
 nativeCanvas.width  = 320;
 nativeCanvas.height = 180;
 
-// ─── Create all systems ────────────────────────────────────────────────────────
 const events       = new EventBus();
 const tilemap      = new Tilemap();
 const input        = new InputSystem();
@@ -53,15 +76,16 @@ const assetGenerator  = new AssetGenerator(
   (import.meta as any).env?.VITE_REPLICATE_KEY ?? '',
 );
 
-const loadingScreen       = new LoadingScreen(nativeCanvas);
 const voiceMomentOverlay  = new VoiceMomentOverlay(uiOverlay, events);
+const modifierDock = gameContainerEl ? new ModifierDock(gameContainerEl) : null;
 
-// ─── Shared mutable game state ─────────────────────────────────────────────────
 let uiBrightness = 1;
+/** Last params used to build the current level (for incremental Generate + save). */
+let sessionGenerationParams: GenerationParams | null = null;
 
 const state: SharedState = {
   spec:         null,
-  phase:        'loading',
+  phase:        'menu',
   gravity:      0.8,
   score:        0,
   health:       3,
@@ -104,8 +128,45 @@ function applyRuleDerivedState(spec: GameSpec): void {
   state.screenBrightness = Math.min(1.5, Math.max(0.3, uiBrightness * state.ruleBrightnessFactor));
 }
 
-// ─── VoiceMomentSystem (imported lazily to break circular dep) ─────────────────
-// We wire it as a structural type so GameLoop doesn't need to import from voice/
+/** Apply left-panel modifier checkboxes onto params. Empty checkboxes = keep params.rules as-is. */
+function applyModifierDock(params: GenerationParams): GenerationParams {
+  if (!modifierDock) return params;
+  const picked = modifierDock.getSelectedRules();
+  const next: GenerationParams = { ...params };
+  if (picked.length > 0) next.rules = picked;
+  if (modifierDock.getStartInvertedGravity()) next.gravityStartsInverted = true;
+  else delete next.gravityStartsInverted;
+  return next;
+}
+
+
+function minimalGenerationParamsFromSpec(spec: GameSpec): GenerationParams {
+  return {
+    title: spec.meta.name,
+    description: spec.meta.description,
+    layout: spec.map.layout as LayoutType,
+    theme: spec.theme.tileset as ThemeId,
+    difficulty: spec.meta.difficulty,
+    sections: [
+      {
+        type: 'intro',
+        widthTiles: 25,
+        hazardDensity: 0,
+        enemyCount: 0,
+        enemyArchetypes: [],
+        hasCheckpoint: false,
+      },
+    ],
+    abilities: spec.player.abilities,
+    rules: spec.rules.map((r) => r.id) as GenerationParams['rules'],
+    voiceMomentCount: 1,
+    backgroundColor: spec.theme.backgroundColor,
+    palette: spec.theme.palette,
+    gameSpeed: spec.meta.gameSpeed,
+    startingHealth: spec.player.health,
+  };
+}
+
 let voiceMomentSystemModule: any = null;
 
 async function loadVoiceMomentSystem() {
@@ -124,21 +185,12 @@ async function loadVoiceMomentSystem() {
   return voiceMomentSystemModule;
 }
 
-// Stub that does nothing until real system loads
-const vmStub = {
-  update: () => {},
-  setSpec: (_s: GameSpec) => {},
-  onPlayerEnteredTrigger: () => {},
-};
-
-// Proxy that forwards to real system once loaded
 const voiceMomentProxy = {
-  update(events: EventBus, state: SharedState, tilemap: Tilemap, entitySystem: EntitySystem, dt: number) {
-    voiceMomentSystemModule?.update(events, state, tilemap, entitySystem, dt);
+  update(eventsBus: EventBus, st: SharedState, tm: Tilemap, es: EntitySystem, dt: number) {
+    voiceMomentSystemModule?.update(eventsBus, st, tm, es, dt);
   },
 };
 
-// ─── Game loop ─────────────────────────────────────────────────────────────────
 const gameLoop = new GameLoop(
   input, player, physics, entitySystem, rules,
   camera, renderer, juice, audio,
@@ -146,7 +198,6 @@ const gameLoop = new GameLoop(
   voiceMomentProxy,
 );
 
-// ─── initGame: wire all systems from a GameSpec ────────────────────────────────
 function initGame(spec: GameSpec): void {
   state.spec         = spec;
   state.phase        = 'gameplay';
@@ -167,8 +218,8 @@ function initGame(spec: GameSpec): void {
   player.initFromSpec(spec.player, spec.map.spawnPoint.x, spec.map.spawnPoint.y, spec.display.tileSize);
   entitySystem.init(spec.entities);
   rules.init(spec.rules, tilemap);
+  rules.update(state, 0);
 
-  // Give voice moment system the new spec
   voiceMomentSystemModule?.setSpec(spec);
 
   queueMicrotask(() => {
@@ -179,13 +230,37 @@ function initGame(spec: GameSpec): void {
   });
 }
 
-// ─── Listen for player events that need cross-system handling ──────────────────
+function showHtmlLoading(title: string, detail: string): void {
+  if (loadingTitleEl) loadingTitleEl.textContent = title;
+  if (loadingDetailEl) loadingDetailEl.textContent = detail;
+  loadingOverlay?.classList.add('visible');
+}
+
+function hideHtmlLoading(): void {
+  loadingOverlay?.classList.remove('visible');
+}
+
+function showMainMenu(): void {
+  state.phase = 'menu';
+  state.simulationPaused = true;
+  mainMenu?.style.setProperty('display', 'flex');
+  playRoot?.classList.remove('visible');
+  modifierDock?.hide();
+  hideHtmlLoading();
+}
+
+function enterPlayView(): void {
+  mainMenu?.style.setProperty('display', 'none');
+  playRoot?.classList.add('visible');
+  state.simulationPaused = false;
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
 events.on('player_damaged_by_enemy', () => {
   player.takeDamage(events, state);
 });
 
 events.on('player_stomp_bounce', () => {
-  // EntitySystem emits this so player bounces without directly calling player methods
   if (player.vy > 0) player.vy = -10;
 });
 
@@ -194,7 +269,6 @@ events.on('collectible_picked_up', () => {
 });
 
 events.on('checkpoint_reached', () => {
-  // Could save respawn point — for now just log
   console.log('Checkpoint!');
 });
 
@@ -209,14 +283,13 @@ events.on('voice_moment_revealed', (payload: { response: { stateChanges: StateCh
     const description = state.spec.meta.description;
     assetGenerator.regenerateTerrain(themeId, palette, description).then((updated) => {
       renderer.patchAssets(updated);
-    }).catch(() => { /* keep existing assets */ });
+    }).catch(() => { /* keep */ });
   }
 });
 
 events.on('boss_summon_minions', (data: any) => {
   if (!data?.entity) return;
-  const bossX = data.entity.x;
-  entitySystem.spawnMaskEnemies(data.count, bossX, tilemap);
+  entitySystem.spawnMaskEnemies(data.count, data.entity.x, tilemap);
 });
 
 events.on('boss_slam_landed', (data: any) => {
@@ -232,11 +305,8 @@ events.on('boss_slam_landed', (data: any) => {
 events.on('player_died', () => {
   state.gameOver = true;
   state.phase    = 'game_over';
-  // Auto-respawn after 1.5 seconds
   setTimeout(() => {
-    if (state.spec) {
-      initGame(state.spec);
-    }
+    if (state.spec) initGame(state.spec);
   }, 1500);
 });
 
@@ -244,7 +314,7 @@ events.on('settings_opened', () => {
   state.simulationPaused = true;
 });
 events.on('settings_closed', () => {
-  state.simulationPaused = false;
+  if (state.phase === 'gameplay') state.simulationPaused = false;
 });
 
 events.on('player_ground_pound_land', () => {
@@ -273,47 +343,113 @@ events.on('player_ground_pound_land', () => {
 });
 
 const settingsPanel = new WorldSettingsPanel(
-  document.getElementById('ui-overlay') as HTMLElement,
+  uiOverlay,
   events,
   (params) => {
+    sessionGenerationParams = { ...params };
     const generator = new ProceduralGenerator();
     const spec = generator.generate(params);
     initGame(spec);
-  }
+    settingsPanel.syncFromGenerationParams(params);
+  },
 );
 
-// ── UI Overlay Logic: Dropdown & Minimap ──
+modifierDock?.setOnLaunch(() => {
+  if (!state.spec) {
+    transcriptEl.textContent = 'Start or load a level first.';
+    return;
+  }
+  const base = sessionGenerationParams
+    ? { ...sessionGenerationParams }
+    : minimalGenerationParamsFromSpec(state.spec);
+  const tuned = applyModifierDock(base);
+  sessionGenerationParams = tuned;
+  const spec = new ProceduralGenerator().generate(tuned);
+  initGame(spec);
+  voiceMomentSystemModule?.setSpec(spec);
+  settingsPanel.syncFromGenerationParams(tuned);
+  transcriptEl.textContent = 'World relaunched with these modifiers (procedural only — no AI art).';
+  modifierDock?.hide();
+});
+
+// ─── Options dropdown ──────────────────────────────────────────────────────────
 const optionsBtn = document.getElementById('options-btn');
 const optionsDropdown = document.getElementById('options-dropdown');
 const menuSettingsBtn = document.getElementById('menu-settings-btn');
 const menuRestartBtn = document.getElementById('menu-restart-btn');
+const menuSaveBtn = document.getElementById('menu-save-btn');
+const menuDownloadBtn = document.getElementById('menu-download-btn');
+const menuMainBtn = document.getElementById('menu-main-btn');
+
+function closeOptionsMenu(): void {
+  if (optionsDropdown) optionsDropdown.style.display = 'none';
+}
+
+function buildSavePayload(): GameSaveFileV1 | null {
+  if (!state.spec) return null;
+  const generationParams =
+    sessionGenerationParams ?? minimalGenerationParamsFromSpec(state.spec);
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    title: state.spec.meta.name,
+    generationParams,
+    gameSpec: state.spec,
+  };
+}
 
 if (optionsBtn && optionsDropdown && menuSettingsBtn && menuRestartBtn) {
-  // Toggle dropdown
   optionsBtn.addEventListener('click', (e) => {
     e.preventDefault();
     optionsBtn.blur();
     optionsDropdown.style.display = optionsDropdown.style.display === 'none' ? 'flex' : 'none';
   });
 
-  // Settings clicked
   menuSettingsBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    optionsDropdown.style.display = 'none'; // close menu
-    settingsPanel.toggle(); 
+    closeOptionsMenu();
+    settingsPanel.toggle();
   });
 
-  // Restart clicked
   menuRestartBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    optionsDropdown.style.display = 'none'; // close menu
+    closeOptionsMenu();
     if (state.spec) initGame(state.spec);
   });
 
-  // Close dropdown if clicking anywhere else on the screen
+  menuSaveBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeOptionsMenu();
+    const payload = buildSavePayload();
+    if (!payload) {
+      transcriptEl.textContent = 'Nothing to save yet.';
+      return;
+    }
+    pushLocalSave(payload);
+    transcriptEl.textContent = `Saved "${payload.title}" to this browser.`;
+  });
+
+  menuDownloadBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeOptionsMenu();
+    const payload = buildSavePayload();
+    if (!payload) {
+      transcriptEl.textContent = 'Nothing to download yet.';
+      return;
+    }
+    downloadSaveJson(payload);
+    transcriptEl.textContent = `Downloaded "${payload.title}.json".`;
+  });
+
+  menuMainBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeOptionsMenu();
+    showMainMenu();
+  });
+
   document.addEventListener('click', (e) => {
     if (!document.getElementById('options-container')?.contains(e.target as Node)) {
-      optionsDropdown.style.display = 'none';
+      closeOptionsMenu();
     }
   });
 
@@ -338,170 +474,218 @@ if (optionsBtn && optionsDropdown && menuSettingsBtn && menuRestartBtn) {
   });
 }
 
-// ── Minimap Render Loop ──
+// ─── Minimap ───────────────────────────────────────────────────────────────────
 const minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
 if (minimapCanvas) {
   const miniCtx = minimapCanvas.getContext('2d')!;
-
   const renderMinimap = () => {
     requestAnimationFrame(renderMinimap);
-    
-    // Only draw if we are actively in gameplay
     if (state.phase !== 'gameplay' || !state.spec) {
       miniCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
       return;
     }
-
     const mw = state.spec.map.width;
     const mh = state.spec.map.height;
     const tSize = state.spec.display.tileSize;
-    
-    // Calculate how much to shrink the map to fit inside the 200x60 canvas
     const scaleX = minimapCanvas.width / mw;
     const scaleY = minimapCanvas.height / mh;
-    
     miniCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-    
-    // 1. Draw Terrain
     for (let r = 0; r < mh; r++) {
       for (let c = 0; c < mw; c++) {
         const tile = tilemap.getTileAt(c, r);
-        if (tile === 1 || tile === 2) { 
-          miniCtx.fillStyle = '#5a4aaa'; // Ground/Platform
+        if (tile === 1 || tile === 2) {
+          miniCtx.fillStyle = '#5a4aaa';
           miniCtx.fillRect(c * scaleX, r * scaleY, scaleX + 0.5, scaleY + 0.5);
-        } else if (tile === 3) { 
-          miniCtx.fillStyle = '#ff0055'; // Red Hazard Pits
+        } else if (tile === 3) {
+          miniCtx.fillStyle = '#ff0055';
           miniCtx.fillRect(c * scaleX, r * scaleY, scaleX + 0.5, scaleY + 0.5);
         }
       }
     }
-    
-    // 2. Draw Player Dot
     const px = player.x / tSize;
     const py = player.y / tSize;
-    miniCtx.fillStyle = '#00ffff'; // Glowing Cyan
+    miniCtx.fillStyle = '#00ffff';
     miniCtx.beginPath();
     miniCtx.arc(px * scaleX, py * scaleY, Math.max(1.5, scaleX), 0, Math.PI * 2);
     miniCtx.fill();
   };
-  
-  // Start the minimap loop
   requestAnimationFrame(renderMinimap);
 }
 
-// ─── Boot sequence ─────────────────────────────────────────────────────────────
-async function boot() {
-  // Load demo spec immediately so something is visible right away
+// ─── Start demo session (after menu) ───────────────────────────────────────────
+async function startDemoSession(): Promise<void> {
   const { DEMO_SPEC } = await import('./generator/DemoSpec');
-
-  // Start the game loop immediately with the demo
-  gameLoop.start();
+  sessionGenerationParams = null;
+  modifierDock?.reset();
+  modifierDock?.hide();
+  settingsPanel.resetToDefaults();
+  renderer.setAssets(new Map());
+  textInput.value = '';
+  textInput.blur();
+  transcriptEl.textContent = 'Fresh demo — nothing loaded from before. Use Generate for AI worlds (and art).';
+  enterPlayView();
   initGame(DEMO_SPEC);
-
-  // Load voice moment system in parallel
-  await loadVoiceMomentSystem();
-
-  // Give it the current spec
   voiceMomentSystemModule?.setSpec(DEMO_SPEC);
+  modifierDock?.peekBriefly();
 }
 
-boot().catch(console.error);
+async function loadGameFromFile(json: string): Promise<void> {
+  const data = parseSaveFile(json);
+  if (!data) {
+    transcriptEl.textContent = 'Invalid save file.';
+    return;
+  }
+  sessionGenerationParams = data.generationParams;
+  settingsPanel.syncFromGenerationParams(data.generationParams);
+  modifierDock?.reset();
+  modifierDock?.hide();
+  enterPlayView();
+  initGame(data.gameSpec);
+  voiceMomentSystemModule?.setSpec(data.gameSpec);
+  transcriptEl.textContent = `Loaded "${data.title}".`;
+}
 
-// ─── Voice creation flow ───────────────────────────────────────────────────────
-async function generateGame(description: string): Promise<void> {
-  if (!description.trim()) return;
+// ─── LLM generation ────────────────────────────────────────────────────────────
+async function runGeneration(description: string): Promise<void> {
+  const trimmed = description.trim();
+  if (!trimmed) {
+    transcriptEl.textContent = 'Type a description first.';
+    return;
+  }
+
+  if (!llmClient.hasApiKey()) {
+    transcriptEl.textContent = 'Add VITE_GEMINI_KEY to use Generate.';
+    return;
+  }
 
   state.phase = 'loading';
-  loadingScreen.show('Imagining your world...');
-
-  // Start the loading screen render loop
-  let loadingRaf: number;
-  let lastLoadTs = performance.now();
-  const renderLoading = (ts: number) => {
-    if (state.phase !== 'loading') return;
-    const dt = Math.min(ts - lastLoadTs, 50);
-    lastLoadTs = ts;
-    loadingScreen.render(dt);
-    // Scale native → display
-    const dCtx = displayCanvas.getContext('2d')!;
-    dCtx.imageSmoothingEnabled = false;
-    dCtx.drawImage(nativeCanvas, 0, 0, 960, 540);
-    loadingRaf = requestAnimationFrame(renderLoading);
-  };
-  loadingRaf = requestAnimationFrame(renderLoading);
+  showHtmlLoading('Building your world', 'Talking to the designer AI…');
 
   try {
-    if (!llmClient.hasApiKey()) {
-      // No API key — show message and play demo
-      transcriptEl.textContent = 'No VITE_GEMINI_KEY — playing demo level';
-      state.phase = 'gameplay';
-      cancelAnimationFrame(loadingRaf);
-      return;
+    let params: GenerationParams;
+    if (sessionGenerationParams) {
+      showHtmlLoading('Updating your world', 'Merging your request into the current design…');
+      params = await llmClient.generateParamsIncremental(trimmed, sessionGenerationParams);
+    } else {
+      showHtmlLoading('Creating from scratch', 'Imagining layout, theme, and pacing…');
+      params = await llmClient.generateParams(trimmed);
     }
 
-    const params = await llmClient.generateParams(description);
-    loadingScreen.update('Building the world...');
+    params = applyModifierDock(params);
+    settingsPanel.syncFromGenerationParams(params);
+    sessionGenerationParams = params;
 
+    showHtmlLoading('Almost there', 'Placing tiles and entities…');
     const generator = new ProceduralGenerator();
     const spec = generator.generate(params);
 
-    // Start game immediately — assets stream in behind the scenes
-    state.phase = 'gameplay';
-    cancelAnimationFrame(loadingRaf);
+    hideHtmlLoading();
     initGame(spec);
+    voiceMomentSystemModule?.setSpec(spec);
+    modifierDock?.peekBriefly();
 
-    // Fire asset generation without blocking; patch renderer as each image arrives
     if (assetGenerator.hasKey()) {
-      assetGenerator.generate(params, (partial) => renderer.patchAssets(partial))
-        .catch(() => { /* silent — game already running with procedural fallback */ });
+      assetGenerator.generate(params, (partial) => renderer.patchAssets(partial)).catch(() => {});
     }
     transcriptEl.textContent = `"${spec.meta.name}" — ${spec.meta.description}`;
   } catch (err) {
-    console.error('Generation failed:', err);
+    console.error(err);
+    hideHtmlLoading();
+    transcriptEl.textContent = 'Generation failed — try again or adjust your prompt.';
     const { DEMO_SPEC } = await import('./generator/DemoSpec');
-    state.phase = 'gameplay';
-    cancelAnimationFrame(loadingRaf);
-    transcriptEl.textContent = 'Generation failed — playing demo level';
     initGame(DEMO_SPEC);
   }
 }
 
-// ─── UI event handlers ─────────────────────────────────────────────────────────
+async function createNewInPlay(): Promise<void> {
+  sessionGenerationParams = null;
+  modifierDock?.reset();
+  modifierDock?.hide();
+  settingsPanel.resetToDefaults();
+  renderer.setAssets(new Map());
+  textInput.value = '';
+  textInput.blur();
+  transcriptEl.textContent = 'New session — nothing from before. Demo loaded; Generate makes a new AI world + art.';
+  const { DEMO_SPEC } = await import('./generator/DemoSpec');
+  initGame(DEMO_SPEC);
+  voiceMomentSystemModule?.setSpec(DEMO_SPEC);
+  modifierDock?.peekBriefly();
+}
+
+// ─── Boot ───────────────────────────────────────────────────────────────────────
+async function boot() {
+  const { DEMO_SPEC } = await import('./generator/DemoSpec');
+  gameLoop.start();
+  initGame(DEMO_SPEC);
+  state.phase = 'menu';
+  state.simulationPaused = true;
+  voiceMomentSystemModule?.setSpec(DEMO_SPEC);
+
+  await loadVoiceMomentSystem();
+  voiceMomentSystemModule?.setSpec(DEMO_SPEC);
+}
+
+menuCreateBtn?.addEventListener('click', () => {
+  startDemoSession().catch(console.error);
+});
+
+menuLoadBtn?.addEventListener('click', () => {
+  fileLoadInput?.click();
+});
+
+fileLoadInput?.addEventListener('change', () => {
+  const f = fileLoadInput.files?.[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result ?? '');
+    loadGameFromFile(text).catch(console.error);
+    fileLoadInput.value = '';
+  };
+  reader.readAsText(f);
+});
+
 submitBtn.addEventListener('click', () => {
-  generateGame(textInput.value);
+  runGeneration(textInput.value).catch(console.error);
 });
 
 textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') generateGame(textInput.value);
+  if (e.key === 'Enter') runGeneration(textInput.value).catch(console.error);
+});
+
+createNewBtn?.addEventListener('click', () => {
+  createNewInPlay().catch(console.error);
 });
 
 micBtn.addEventListener('click', async () => {
   if (!voicePipeline.isSupported()) {
-    transcriptEl.textContent = 'Voice not supported in this browser — use text input (Chrome recommended)';
+    transcriptEl.textContent = 'Voice not supported — use text (Chrome recommended).';
     return;
   }
-
   micBtn.classList.add('listening');
-  micBtn.textContent = '[ listening... ]';
+  micBtn.textContent = 'Listening…';
   transcriptEl.textContent = '';
-
   try {
     const transcript = await voicePipeline.listen((interim) => {
       transcriptEl.textContent = interim;
     });
     micBtn.classList.remove('listening');
-    micBtn.textContent = '[ mic ]';
-
+    micBtn.textContent = 'Mic';
     if (transcript) {
       textInput.value = transcript;
-      transcriptEl.textContent = `"${transcript}"`;
-      generateGame(transcript);
+      await runGeneration(transcript);
     } else {
-      transcriptEl.textContent = 'No speech detected — try again or use text input';
+      transcriptEl.textContent = 'No speech detected.';
     }
-  } catch (err) {
+  } catch {
     micBtn.classList.remove('listening');
-    micBtn.textContent = '[ mic ]';
-    transcriptEl.textContent = 'Mic error — use text input instead';
+    micBtn.textContent = 'Mic';
+    transcriptEl.textContent = 'Mic error — use text input.';
   }
 });
+
+displayCanvas.addEventListener('click', () => {
+  textInput.blur();
+});
+
+boot().catch(console.error);

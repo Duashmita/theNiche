@@ -80,30 +80,6 @@ export class PhysicsSystem {
         }
       }
 
-      // ── One-way platform — solid from above only ────────────────────────
-      if (tile.collisionType === CollisionType.PLATFORM) {
-        if (player.vy > 0) {
-          // Check whether player's bottom edge was above the platform top
-          // in the previous frame (+1 pixel tolerance for sub-pixel gaps)
-          const prevBottom = (player.y - player.vy) + player.height;
-          const tileTop = tile.pixelY;
-          if (prevBottom <= tileTop + 1) {
-            player.y = tile.pixelY - player.height;
-            const wasAirborne = !player.onGround;
-            player.onGround = true;
-            const landingVy = player.vy;
-            player.vy = 0;
-            if (wasAirborne) {
-              events.emit('player_landed', {
-                vy: landingVy,
-                tileX: tile.col,
-                tileY: tile.row,
-              });
-            }
-          }
-        }
-      }
-
       // ── Hazard — deal damage ─────────────────────────────────────────────
       if (tile.collisionType === CollisionType.HAZARD) {
         events.emit('player_hit_hazard', {});

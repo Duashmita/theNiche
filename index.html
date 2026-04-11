@@ -3,27 +3,78 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Voice Console</title>
+  <title>The Niche — Voice Console</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #07070f;
+      background: #05050c;
+      min-height: 100vh;
+      font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+      color: #e4e2ec;
+      user-select: none;
+    }
+
+    #main-menu {
+      position: fixed;
+      inset: 0;
+      z-index: 500;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
-      font-family: 'Courier New', monospace;
-      color: #c8c8d0;
-      user-select: none;
+      background: radial-gradient(ellipse 80% 60% at 50% 20%, #1a1a3a 0%, #05050c 55%);
+      gap: 28px;
     }
-    h1 {
-      font-size: 13px;
-      letter-spacing: 6px;
-      color: #444;
-      text-transform: uppercase;
-      margin-bottom: 10px;
+    #main-menu h1 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: #c4baff;
     }
+    #main-menu p {
+      font-size: 14px;
+      color: #6a6888;
+      max-width: 420px;
+      text-align: center;
+      line-height: 1.5;
+    }
+    .menu-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+    }
+    .menu-actions button {
+      min-width: 200px;
+      padding: 14px 28px;
+      font-size: 15px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid #5a4aaa;
+      background: linear-gradient(180deg, #2a2050, #1a1530);
+      color: #e8e4ff;
+      transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+    }
+    .menu-actions button:hover {
+      border-color: #8a7aff;
+      box-shadow: 0 0 24px rgba(100, 80, 200, 0.25);
+      transform: translateY(-1px);
+    }
+    .menu-actions button.secondary {
+      background: transparent;
+      border-color: #3a3a5a;
+      color: #a8a6c0;
+    }
+
+    #play-root {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 12px 24px;
+    }
+    #play-root.visible { display: flex; }
+
     #game-container {
       position: relative;
     }
@@ -33,7 +84,8 @@
       max-width: 100vw;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      border: 1px solid #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 4px;
       background: #030308;
     }
     #ui-overlay {
@@ -42,112 +94,301 @@
       pointer-events: none;
       overflow: hidden;
     }
+
+    #modifier-dock {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 220px;
+      z-index: 80;
+      pointer-events: none;
+      transition: opacity 0.7s ease;
+    }
+    #modifier-dock.modifier-dock--hidden { display: none; }
+    #modifier-dock .modifier-dock__blur {
+      position: absolute;
+      inset: 0;
+      backdrop-filter: blur(10px);
+      background: rgba(6, 6, 14, 0.45);
+      pointer-events: none;
+    }
+    #modifier-dock .modifier-dock__panel {
+      position: relative;
+      margin: 48px 8px 8px 8px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(120, 100, 200, 0.35);
+      background: rgba(12, 10, 24, 0.82);
+      pointer-events: auto;
+      max-height: calc(100% - 56px);
+      overflow-y: auto;
+    }
+    #modifier-dock .modifier-dock__title {
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #8a82c0;
+      margin-bottom: 4px;
+    }
+    #modifier-dock .modifier-dock__sub {
+      font-size: 10px;
+      color: #555;
+      line-height: 1.35;
+      margin-bottom: 10px;
+    }
+    #modifier-dock .modifier-dock__row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #b8b4d4;
+      margin-bottom: 6px;
+      cursor: pointer;
+    }
+    #modifier-dock .modifier-dock__invert {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 11px;
+      color: #9088b8;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #2a2840;
+      cursor: pointer;
+    }
+    #modifier-dock .modifier-dock__launch {
+      width: 100%;
+      margin-top: 12px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid #5a4aaa;
+      background: linear-gradient(180deg, #3a2d7a, #2a2050);
+      color: #e8e4ff;
+      pointer-events: auto;
+    }
+    #modifier-dock .modifier-dock__launch:hover {
+      border-color: #8a7aff;
+    }
+
+    #loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(4, 4, 12, 0.92);
+      backdrop-filter: blur(8px);
+    }
+    #loading-overlay.visible { display: flex; }
+    #loading-overlay h2 {
+      font-size: clamp(1.25rem, 3vw, 1.75rem);
+      font-weight: 600;
+      color: #c4baff;
+      margin-bottom: 12px;
+    }
+    #loading-overlay .loading-sub {
+      font-size: 15px;
+      color: #7a7898;
+      margin-bottom: 28px;
+    }
+    .loading-bar {
+      width: min(360px, 88vw);
+      height: 6px;
+      border-radius: 3px;
+      background: #1a1a2e;
+      overflow: hidden;
+    }
+    .loading-bar > div {
+      height: 100%;
+      width: 35%;
+      background: linear-gradient(90deg, #4a3a9a, #7f77dd);
+      border-radius: 3px;
+      animation: load-slide 1.2s ease-in-out infinite;
+    }
+    @keyframes load-slide {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(280%); }
+    }
+
     #bottom-bar {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
-      margin-top: 10px;
+      gap: 10px;
+      margin-top: 14px;
       width: 960px;
       max-width: 100vw;
     }
-    #controls-hint {
-      font-size: 11px;
-      color: #333;
-      letter-spacing: 1px;
-    }
-    #input-row {
+    .action-row {
       display: flex;
-      gap: 6px;
+      flex-wrap: wrap;
+      gap: 8px;
       align-items: center;
+      justify-content: center;
     }
-    #mic-btn {
-      background: #0d0d1e;
+    #text-input {
+      background: #0c0c18;
       border: 1px solid #2a2a4a;
-      color: #5588cc;
-      padding: 7px 14px;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.15s;
-      letter-spacing: 1px;
+      color: #e4e2ec;
+      padding: 10px 14px;
+      font-size: 14px;
+      width: min(420px, 92vw);
+      outline: none;
+      border-radius: 6px;
     }
-    #mic-btn:hover { border-color: #4466aa; color: #88aaee; }
+    #text-input:focus { border-color: #5a4aaa; }
+    #mic-btn, #submit-btn, #create-new-btn {
+      padding: 10px 18px;
+      font-size: 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      border: 1px solid #3a3a6a;
+      background: #141428;
+      color: #b8b4e0;
+    }
+    #submit-btn {
+      border-color: #3a6a4a;
+      background: #102818;
+      color: #8ce0a0;
+    }
+    #create-new-btn {
+      border-color: #6a4a3a;
+      background: #281810;
+      color: #e0b88c;
+    }
     #mic-btn.listening {
-      background: #1e0d0d;
       border-color: #aa3333;
-      color: #ee6666;
+      color: #ff8888;
       animation: breathe 0.9s ease-in-out infinite;
     }
     @keyframes breathe {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.55; }
     }
-    #text-input {
-      background: #0a0a14;
-      border: 1px solid #1e1e3a;
-      color: #c8c8d0;
-      padding: 7px 12px;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      width: 500px;
-      outline: none;
-      letter-spacing: 0.5px;
-    }
-    #text-input:focus { border-color: #3a3a6a; }
-    #text-input::placeholder { color: #2a2a3a; }
-    #submit-btn {
-      background: #0d1a0d;
-      border: 1px solid #2a4a2a;
-      color: #55aa55;
-      padding: 7px 16px;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      cursor: pointer;
-      letter-spacing: 1px;
-    }
-    #submit-btn:hover { border-color: #4a8a4a; color: #88cc88; }
-    #transcript {
+    #controls-hint {
       font-size: 11px;
       color: #444;
-      min-height: 16px;
-      letter-spacing: 0.5px;
-      font-style: italic;
+      text-align: center;
+      line-height: 1.4;
     }
+    #transcript {
+      font-size: 12px;
+      color: #555;
+      min-height: 18px;
+      font-style: italic;
+      text-align: center;
+    }
+
+    #options-container {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 200;
+    }
+    #options-btn {
+      background: #2a2050;
+      border: 1px solid #5a4aaa;
+      color: #c4baff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    #options-dropdown {
+      display: none;
+      flex-direction: column;
+      background: #0a0a14;
+      border: 1px solid #5a4aaa;
+      border-radius: 6px;
+      margin-top: 6px;
+      min-width: 240px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+    }
+    #options-dropdown button, #options-dropdown label {
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #1e1e2e;
+      color: #c4baff;
+      padding: 10px 14px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #options-dropdown button:hover { background: #1a1530; }
+    #options-dropdown .opt-muted { color: #666; font-size: 10px; padding: 6px 14px 2px; border: none; }
+
+    #minimap-canvas {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 50;
+      background: rgba(4, 5, 12, 0.88);
+      border: 1px solid #5a4aaa;
+      border-radius: 6px;
+    }
+
+    #file-load-input { display: none; }
   </style>
 </head>
 <body>
-  <h1>Voice Console</h1>
-  <div id="game-container">
-    <canvas id="display-canvas" width="960" height="540"></canvas>
-    <div id="ui-overlay"></div>
-    <div id="options-container" style="position:absolute; top:10px; left:10px; z-index: 200; font-family: monospace;">
-      <button id="options-btn" style="background: #2a2050; border: 1px solid #5a4aaa; color: #c4baff; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.15s;">OPTIONS ▼</button>
-      
-      <div id="options-dropdown" style="display: none; flex-direction: column; background: #080812; border: 1px solid #5a4aaa; border-radius: 4px; margin-top: 5px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.5); min-width: 220px;">
-        <button id="menu-settings-btn" style="background: transparent; border: none; border-bottom: 1px solid #1e1e2e; color: #c4baff; padding: 10px 16px; text-align: left; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='#1a1530'" onmouseout="this.style.background='transparent'">⚙️ World settings (Tab)</button>
-        <label style="color:#888;font-size:10px;padding:8px 12px 2px;">Game speed</label>
-        <input type="range" id="opt-game-speed" min="0.25" max="2.5" step="0.05" value="1" style="width:90%;margin:0 12px 8px;accent-color:#7f77dd;" />
-        <label style="color:#888;font-size:10px;padding:0 12px 2px;">Brightness</label>
-        <input type="range" id="opt-brightness" min="0.35" max="1.5" step="0.05" value="1" style="width:90%;margin:0 12px 8px;accent-color:#7f77dd;" />
-        <button id="menu-restart-btn" style="background: transparent; border: none; border-top: 1px solid #1e1e2e; color: #ff4444; padding: 10px 16px; text-align: left; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='#2a0d14'" onmouseout="this.style.background='transparent'">↻ Restart Level</button>
-      </div>
+  <div id="main-menu">
+    <h1>The Niche</h1>
+    <p>Create worlds with your voice or a short prompt, tweak modifiers, save and load your runs.</p>
+    <div class="menu-actions">
+      <button type="button" id="menu-create-btn">Create new game</button>
+      <button type="button" id="menu-load-btn" class="secondary">Load game…</button>
     </div>
+    <input type="file" id="file-load-input" accept="application/json,.json" />
+  </div>
 
-    <canvas id="minimap-canvas" width="200" height="60" style="position:absolute; top:10px; right:10px; z-index: 50; background: rgba(4, 5, 12, 0.85); border: 1px solid #5a4aaa; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></canvas>
+  <div id="loading-overlay" aria-live="polite">
+    <h2 id="loading-title">Working…</h2>
+    <p class="loading-sub" id="loading-detail">Please wait</p>
+    <div class="loading-bar"><div></div></div>
   </div>
-  <div id="bottom-bar">
-    <div id="input-row">
-      <button id="mic-btn">[ mic ]</button>
-      <input id="text-input" type="text"
-        placeholder="describe your game — 'a dark dungeon with gravity flip'" />
-      <button id="submit-btn">[ generate ]</button>
+
+  <div id="play-root">
+    <div id="game-container">
+      <canvas id="display-canvas" width="960" height="540"></canvas>
+      <div id="ui-overlay"></div>
+      <div id="options-container">
+        <button type="button" id="options-btn">OPTIONS ▼</button>
+        <div id="options-dropdown">
+          <button type="button" id="menu-settings-btn">World settings (Tab)</button>
+          <label class="opt-muted">Game speed</label>
+          <input type="range" id="opt-game-speed" min="0.25" max="2.5" step="0.05" value="1" style="width:90%;margin:0 12px 8px;accent-color:#7f77dd;" />
+          <label class="opt-muted">Brightness</label>
+          <input type="range" id="opt-brightness" min="0.35" max="1.5" step="0.05" value="1" style="width:90%;margin:0 12px 8px;accent-color:#7f77dd;" />
+          <button type="button" id="menu-save-btn">Save to browser</button>
+          <button type="button" id="menu-download-btn">Download .json</button>
+          <button type="button" id="menu-restart-btn">Restart level</button>
+          <button type="button" id="menu-main-btn">Main menu</button>
+        </div>
+      </div>
+      <canvas id="minimap-canvas" width="200" height="60"></canvas>
     </div>
-    <div id="controls-hint">
-      arrows · jump space · dash X · grapple G · shift pound / size · F fly · Z shoot · E sword · ESC options
+    <div id="bottom-bar">
+      <div class="action-row">
+        <button type="button" id="mic-btn">Mic</button>
+        <input id="text-input" type="text" placeholder="Describe changes — e.g. add wind, make it a dungeon…" />
+        <button type="button" id="submit-btn">Generate</button>
+        <button type="button" id="create-new-btn">Create new</button>
+      </div>
+      <div id="controls-hint">
+        Arrows · Space jump · X dash · G grapple · Shift pound / size · F fly · Z shoot · E sword · ESC options
+      </div>
+      <div id="transcript"></div>
     </div>
-    <div id="transcript"></div>
   </div>
+
   <script type="module" src="/src/index.ts"></script>
 </body>
 </html>

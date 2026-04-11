@@ -45,6 +45,30 @@ export class InputSystem {
   }
 
   update(): void {
+    const active = document.activeElement as HTMLElement | null;
+    const typingUi =
+      !!active &&
+      (active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.isContentEditable);
+    if (typingUi) {
+      this.left = this.right = this.up = this.down = false;
+      this.jump = this.dash = this.fly = false;
+      this.jumpBuffered = false;
+      this.dashBuffered = false;
+      this.shootBuffered = false;
+      this.meleeBuffered = false;
+      this.grappleBuffered = false;
+      this.shiftLeftBuffered = false;
+      this.prevJump = false;
+      this.prevDash = false;
+      this.prevShoot = false;
+      this.prevMelee = false;
+      this.prevGrapple = false;
+      this.prevShiftLeft = false;
+      return;
+    }
+
     const kLeft  = this.keysDown.has('ArrowLeft')  || this.keysDown.has('KeyA');
     const kRight = this.keysDown.has('ArrowRight') || this.keysDown.has('KeyD');
     const kUp    = this.keysDown.has('ArrowUp')    || this.keysDown.has('KeyW');

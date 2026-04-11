@@ -7,13 +7,19 @@ const ASSET_TYPES: AssetType[] = [
 ];
 
 const TYPE_PROMPTS: Record<AssetType, string> = {
-  ground:       'solid squareground tile, simple dirt and stone, flat top edge',
-  platform:     'thin floating plank, single color',
+  ground:
+    'seamless tileable ground texture square, edges wrap perfectly when tiled in a grid, continuous surface',
+  platform:
+    'seamless tileable floating terrain texture, same wrap rules as ground, solid block face',
   hazard:       'upward-pointing spikes, simple triangles',
   decoration:   'small background prop, bush or rock, minimal',
-  player:       'small humanoid character, idle pose, facing right',
-  enemy_patrol: 'small ground creature, facing right, simple shape',
-  enemy_flyer:  'small flying creature, wings spread, simple silhouette',
+  player:
+    'simple cartoon game hero, large clear eyes and visible friendly face, plain flat colors, ' +
+    'minimal shading, no busy texture, idle facing right, transparent background',
+  enemy_patrol:
+    'simple cartoon enemy, big visible eyes or clear face dots, plain colors, minimal detail, facing right',
+  enemy_flyer:
+    'simple cartoon flying enemy, clear eyes, plain wings, flat colors, readable silhouette',
   coin:         'round golden coin, simple shine mark',
   background:
     'ultra-wide panoramic sidescroller backdrop, horizontal layered landscape, ' +
@@ -97,6 +103,15 @@ export class AssetGenerator {
                   output_format: 'png',
                   output_quality: 70,
                 }
+              : type === 'player'
+              ? {
+                  prompt,
+                  aspect_ratio: '1:1',
+                  width: 512,
+                  height: 512,
+                  output_format: 'png',
+                  output_quality: 78,
+                }
               : {
                   prompt,
                   aspect_ratio: '1:1',
@@ -143,6 +158,18 @@ export class AssetGenerator {
         `2D game parallax backdrop, ${themeId} theme${context}, ${typeDesc}, ` +
         `soft limited palette harmonizing with ${colors}, smooth gradients between regions, ` +
         `no characters, no UI, no text, full opaque image`
+      );
+    }
+    if (type === 'player') {
+      return (
+        `2D game character sprite, ${themeId} theme${context}, ${typeDesc}, ` +
+        `use palette hints ${colors}, transparent background, no text, no UI`
+      );
+    }
+    if (type === 'enemy_patrol' || type === 'enemy_flyer') {
+      return (
+        `2D game enemy sprite, ${themeId} theme${context}, ${typeDesc}, ` +
+        `plain simple shapes, ${colors}, transparent background, no text`
       );
     }
     return (

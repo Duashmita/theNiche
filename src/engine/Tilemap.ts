@@ -58,7 +58,8 @@ export class Tilemap {
     switch (tile) {
       case TileType.AIR:        return CollisionType.NONE;
       case TileType.GROUND:     return CollisionType.SOLID;
-      case TileType.PLATFORM:   return CollisionType.PLATFORM;
+      // Platforms use full AABB collision (same as ground) — no one-way pass-through.
+      case TileType.PLATFORM:   return CollisionType.SOLID;
       case TileType.HAZARD:     return CollisionType.HAZARD;
       case TileType.DOOR:       return CollisionType.SOLID;
       case TileType.TRIGGER:    return CollisionType.TRIGGER;

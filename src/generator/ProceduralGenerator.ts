@@ -148,7 +148,10 @@ export class ProceduralGenerator {
       entities,
       rules:        params.rules.map((id) => ({
         id,
-        params: defaultRuleParams(id),
+        params: {
+          ...defaultRuleParams(id),
+          ...(id === 'gravity_flip' && params.gravityStartsInverted ? { startInverted: true } : {}),
+        },
       })),
       voiceMoments,
     };

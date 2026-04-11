@@ -2,7 +2,7 @@
 export const TileType = {
   AIR: 0,
   GROUND: 1,
-  PLATFORM: 2,   // one-way, solid from above only
+  PLATFORM: 2,   // parkour / floating blocks — full solid collision (same as ground)
   HAZARD: 3,     // kills on contact
   DOOR: 4,       // solid until voice-moment unlocks
   TRIGGER: 5,    // invisible, fires event on overlap
@@ -150,6 +150,11 @@ export interface GenerationParams {
   startingHealth?: number;
   /** Global simulation speed (0.25–2.5). */
   gameSpeed?: number;
+  /**
+   * When `gravity_flip` is active, start with inverted gravity (e.g. walk on ceiling).
+   * Set from prompts like "start upside down" / "inverted world".
+   */
+  gravityStartsInverted?: boolean;
 }
 
 // ─── Runtime tile info (returned by Tilemap.getTilesInRect) ───────────────────
@@ -229,7 +234,7 @@ export interface VoiceMomentResponse {
 
 // ─── Shared mutable game state (passed by reference everywhere) ───────────────
 export type GamePhase =
-  | 'loading' | 'creation' | 'gameplay' | 'voice_moment' | 'game_over';
+  | 'menu' | 'loading' | 'creation' | 'gameplay' | 'voice_moment' | 'game_over';
 
 export interface SharedState {
   spec: GameSpec | null;
