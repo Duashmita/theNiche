@@ -221,6 +221,16 @@ export interface Particle {
   size: number;
 }
 
+export interface FloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;     // ms remaining
+  maxLife: number;
+  vy: number;       // floats upward (negative = up)
+}
+
 // ─── Voice moment ─────────────────────────────────────────────────────────────
 export enum VoiceMomentPhase {
   IDLE       = 'IDLE',
