@@ -137,6 +137,19 @@ export class GameLoop {
       this.physics.update(this.player, this.tilemap, this.events, this.state);
     }
 
+    // ── Exit detection ────────────────────────────────────────────────────────
+    if (!frozen && !paused && !menuOrLoad && this.player.alive &&
+        !this.state.levelComplete && this.state.phase === 'gameplay' &&
+        this.state.spec) {
+      const exit = this.state.spec.map.exitPoint;
+      const ts   = this.state.spec.display.tileSize;
+      if (Math.abs(this.player.x - exit.x * ts) < ts * 2 &&
+          Math.abs(this.player.y - exit.y * ts) < ts * 2) {
+        this.state.levelComplete = true;
+        this.events.emit('level_complete', {});
+      }
+    }
+
     // ── Fall off world → death ────────────────────────────────────────────────
     if (!frozen && !paused && !menuOrLoad && this.player.alive &&
         this.player.y > this.tilemap.worldPixelHeight + 12) {

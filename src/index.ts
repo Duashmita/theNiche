@@ -136,8 +136,9 @@ const state: SharedState = {
   sectionStartTimeMs: performance.now(),
 
   // ── Economy / UI ────────────────────────────────────────────────────────
-  currency:     0,
-  levelUpToast: null,
+  currency:      0,
+  levelUpToast:  null,
+  levelComplete: false,
 };
 
 function applyRuleDerivedState(spec: GameSpec): void {
@@ -299,6 +300,7 @@ function initGame(spec: GameSpec): void {
   state.sectionStartTimeMs = performance.now();
   state.currency          = 0;
   state.levelUpToast      = null;
+  state.levelComplete     = false;
   progressionTickAccum    = 0;
 
   applyRuleDerivedState(spec);
@@ -408,6 +410,15 @@ events.on('boss_slam_landed', (data: any) => {
     { count: 16, colors: ['#ff4422', '#ff8844', '#ffffff'], speed: 4, spread: 160, gravity: 0.3, lifetime: 400, size: 3 },
   );
   juice.shakeIntensity = 10;
+});
+
+events.on('level_complete', () => {
+  setTimeout(() => {
+    if (state.spec) {
+      state.levelComplete = false;
+      initGame(state.spec);
+    }
+  }, 3000);
 });
 
 events.on('player_died', () => {

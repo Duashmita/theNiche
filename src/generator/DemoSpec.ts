@@ -185,7 +185,7 @@ export const DEMO_SPEC: GameSpec = {
   },
   player: {
     sprite: 'player',
-    abilities: ['double_jump'],
+    abilities: ['double_jump', 'shoot'],
     health: 3,
   },
   entities: [

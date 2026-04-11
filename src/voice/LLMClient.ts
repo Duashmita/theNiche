@@ -203,7 +203,8 @@ export class LLMClient {
     const validAbilities = ['double_jump','wall_slide','dash','wall_jump','ground_pound','glide','swim','shoot','grapple','size_change','melee'];
     let abilities = (p.abilities ?? b?.abilities ?? []).filter(a => validAbilities.includes(a));
     if (!abilities.includes('double_jump')) abilities = ['double_jump', ...abilities];
-    abilities = abilities.slice(0, 3);
+    if (!abilities.includes('shoot'))       abilities = [...abilities, 'shoot'];
+    abilities = abilities.slice(0, 4);
 
     // Rules: model only; UI toggles applied later
     const validRules = ['gravity_flip','floor_decay','size_change','speed_boost','vision_limit','time_limit','wind','darkness','enemy_grow','mirror'];

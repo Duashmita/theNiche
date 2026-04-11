@@ -308,6 +308,8 @@ export interface SharedState {
 
   // ── Transient UI ────────────────────────────────────────────────────────────
   levelUpToast: { level: number; displayUntil: number } | null;
+  /** Set to true when the player reaches the exit point. */
+  levelComplete: boolean;
 }
 
 // ─── Asset generation ─────────────────────────────────────────────────────────

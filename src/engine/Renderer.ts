@@ -138,6 +138,14 @@ export class Renderer {
     // 6. Player
     this.drawPlayer(ctx, player, state, palette);
 
+    // ── Exit portal ───────────────────────────────────────────────────────────
+    if (spec?.map?.exitPoint) {
+      const ts  = spec.display.tileSize;
+      const epx = spec.map.exitPoint.x * ts;
+      const epy = spec.map.exitPoint.y * ts;
+      this.drawExitPortal(ctx, epx, epy, ts, state.frameCount);
+    }
+
     // ── Grapple cable ─────────────────────────────────────────────────────────
     if ((player as any).grappleActive) {
       const gx = (player as any).grappleX;
@@ -766,19 +774,43 @@ export class Renderer {
       }
 
       case 'projectile': {
-        ctx.fillStyle = '#ff8844';
-        ctx.beginPath();
-        ctx.arc(x + entity.width / 2, y + entity.height / 2, 3, 0, Math.PI * 2);
-        ctx.fill();
-
+        const isPlayer = entity.params.fromPlayer === true;
+        const coreColor = isPlayer ? '#88eeff' : '#ff3322';
+        const glowColor = isPlayer ? 'rgba(136,238,255,0.25)' : 'rgba(255,51,34,0.25)';
+        const cx = x + entity.width / 2;
+        const cy = y + entity.height / 2;
         const pvx = (entity.params.vx as number) ?? 0;
         const pvy = (entity.params.vy as number) ?? 0;
-        ctx.strokeStyle = 'rgba(255,136,68,0.4)';
-        ctx.lineWidth   = 1;
+
+        // Trail
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = coreColor;
+        ctx.lineWidth   = 3;
+        ctx.lineCap     = 'round';
         ctx.beginPath();
-        ctx.moveTo(x + entity.width / 2, y + entity.height / 2);
-        ctx.lineTo(x + entity.width / 2 - pvx * 3, y + entity.height / 2 - pvy * 3);
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx - pvx * 5, cy - pvy * 5);
         ctx.stroke();
+        ctx.restore();
+
+        // Outer glow
+        ctx.fillStyle = glowColor;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Core
+        ctx.fillStyle = coreColor;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Bright centre dot
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 1.5, 0, Math.PI * 2);
+        ctx.fill();
         break;
       }
 
@@ -1141,9 +1173,60 @@ export class Renderer {
       }
     }
 
+    // ── Level complete overlay ────────────────────────────────────────────
+    if (state.levelComplete) {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = '#44ffcc';
+      ctx.font      = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('LEVEL COMPLETE', W / 2, H / 2 - 14);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font      = '5px monospace';
+      ctx.fillText(`SCORE  ${String(state.score).padStart(6, '0')}`, W / 2, H / 2);
+      ctx.fillStyle = '#aaaaaa';
+      ctx.fillText('restarting…', W / 2, H / 2 + 12);
+    }
+
     // Reset alignment for next frame
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
+  }
+
+  /** Glowing exit portal drawn in world space. */
+  private drawExitPortal(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    ts: number,
+    frameCount: number,
+  ): void {
+    const pulse = 0.6 + Math.sin(frameCount * 0.08) * 0.4;
+    ctx.save();
+
+    // Glow fill
+    ctx.globalAlpha = pulse * 0.45;
+    ctx.fillStyle   = '#44ffcc';
+    ctx.fillRect(x, y - ts * 2, ts * 2, ts * 3);
+
+    // Border
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth   = 2;
+    ctx.strokeRect(x, y - ts * 2, ts * 2, ts * 3);
+
+    // Label above portal
+    ctx.globalAlpha = 1;
+    ctx.fillStyle   = '#00ffcc';
+    ctx.font        = '5px monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('EXIT', x + ts, y - ts * 2 - 2);
+
+    ctx.restore();
   }
 
   /** Draw a small pixel-art heart at (x, y). */
