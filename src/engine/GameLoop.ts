@@ -125,19 +125,20 @@ export class GameLoop {
 
     const frozen = this.juice.isFrozen();
     const paused = this.state.simulationPaused;
+    const menuOrLoad = this.state.phase === 'menu' || this.state.phase === 'loading';
 
     // ── 2. Player ────────────────────────────────────────────────────────────
-    if (!frozen && !paused) {
+    if (!frozen && !paused && !menuOrLoad) {
       this.player.update(this.input, this.events, this.state, this.tilemap, simDt);
     }
 
     // ── 3. Physics ───────────────────────────────────────────────────────────
-    if (!frozen && !paused) {
+    if (!frozen && !paused && !menuOrLoad) {
       this.physics.update(this.player, this.tilemap, this.events, this.state);
     }
 
     // ── Fall off world → death ────────────────────────────────────────────────
-    if (!frozen && !paused && this.player.alive &&
+    if (!frozen && !paused && !menuOrLoad && this.player.alive &&
         this.player.y > this.tilemap.worldPixelHeight + 12) {
       this.state.health = 0;
       this.player.alive = false;
@@ -146,17 +147,17 @@ export class GameLoop {
     }
 
     // ── 4. Entity system ─────────────────────────────────────────────────────
-    if (!frozen && !paused) {
+    if (!frozen && !paused && !menuOrLoad) {
       this.entitySystem.update(this.player, this.tilemap, this.events, simDt, this.input);
     }
 
     // ── 5. Rules engine ──────────────────────────────────────────────────────
-    if (!frozen && !paused) {
+    if (!frozen && !paused && !menuOrLoad) {
       this.rules.update(this.state, simDt);
     }
 
     // ── Time limit ────────────────────────────────────────────────────────────
-    if (!frozen && !paused && this.state.timeRemainingMs != null && this.state.timeRemainingMs > 0) {
+    if (!frozen && !paused && !menuOrLoad && this.state.timeRemainingMs != null && this.state.timeRemainingMs > 0) {
       this.state.timeRemainingMs -= simDt;
       if (this.state.timeRemainingMs <= 0) {
         this.state.timeRemainingMs = 0;
@@ -190,7 +191,7 @@ export class GameLoop {
     this.juice.update(dt);
 
     // ── 9. Voice moment (always runs — manages its own frozen-state logic) ───
-    if (!paused) {
+    if (!paused && !menuOrLoad) {
       this.voiceMomentSystem.update(
         this.events,
         this.state,

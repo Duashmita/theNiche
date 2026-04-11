@@ -166,6 +166,55 @@ export class WorldSettingsPanel {
     return this.isOpen;
   }
 
+  /** Reset manual settings to defaults (Create new game — no stale rules/modifiers). */
+  resetToDefaults(): void {
+    this.draft = {
+      theme:             'forest',
+      layout:            'linear',
+      sectionCount:      5,
+      health:            3,
+      gameSpeed:         1,
+      abilities:         new Set(['double_jump']),
+      voiceMomentCount:  2,
+      enemyArchetypes:   new Set(['patrol', 'chaser']),
+      enemyDensity:      2,
+      difficulty:        0.4,
+      rules:             new Set(),
+    };
+    if (this.isOpen) this.render();
+  }
+
+  /**
+   * After text/voice generation, copy those knobs into this panel so TAB reflects
+   * the same world the prompt produced (edit + LAUNCH WORLD to tweak).
+   */
+  syncFromGenerationParams(params: GenerationParams): void {
+    this.draft.theme            = params.theme;
+    this.draft.layout           = params.layout;
+    this.draft.sectionCount     = Math.max(3, params.sections?.length ?? this.draft.sectionCount);
+    this.draft.difficulty       = params.difficulty;
+    this.draft.gameSpeed        = typeof params.gameSpeed === 'number' ? params.gameSpeed : this.draft.gameSpeed;
+    this.draft.health           = params.startingHealth ?? this.draft.health;
+    this.draft.abilities        = new Set(params.abilities ?? []);
+    this.draft.rules            = new Set(params.rules ?? []);
+    const vm = params.voiceMomentCount ?? 2;
+    this.draft.voiceMomentCount = vm >= 99 ? 99 : Math.max(0, Math.min(3, vm));
+
+    const arch = new Set<string>();
+    for (const s of params.sections ?? []) {
+      for (const a of s.enemyArchetypes ?? []) arch.add(a);
+    }
+    if (arch.size) this.draft.enemyArchetypes = arch;
+
+    const counts = (params.sections ?? []).map(s => s.enemyCount);
+    if (counts.length) {
+      const maxC = Math.max(...counts);
+      this.draft.enemyDensity = maxC <= 0 ? 0 : maxC <= 1 ? 1 : maxC <= 2 ? 2 : 3;
+    }
+
+    if (this.isOpen) this.render();
+  }
+
   // ── Style ──────────────────────────────────────────────────────────────────
 
   private applyPanelStyles(): void {

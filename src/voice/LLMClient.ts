@@ -1,5 +1,5 @@
-import { GenerationParams, VoiceMomentSpec, VoiceMomentResponse } from '../types';
-import { CREATION_PROMPT, VOICE_MOMENT_PROMPT } from './PromptTemplates';
+import { GenerationParams, RuleId, VoiceMomentSpec, VoiceMomentResponse } from '../types';
+import { CREATION_PROMPT, INCREMENTAL_PROMPT, VOICE_MOMENT_PROMPT } from './PromptTemplates';
 
 const MODEL   = 'gemini-2.5-flash';
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -34,7 +34,39 @@ export class LLMClient {
       console.warn('Gemini returned non-JSON for game params — using defaults. Raw:', text.slice(0, 400));
     }
 
-    return this.validateParams(raw, description);
+    return this.validateParams(raw, description, { inferThemeLayout: true });
+  }
+
+  /** Merge a small user request into existing params (Generate button after first world exists). */
+  async generateParamsIncremental(
+    userRequest: string,
+    current: GenerationParams,
+  ): Promise<GenerationParams> {
+    if (!this.hasApiKey()) throw new Error('No API key configured');
+
+    const payload = [
+      INCREMENTAL_PROMPT,
+      '',
+      'currentParams:',
+      JSON.stringify(current),
+      '',
+      `userRequest: "${userRequest}"`,
+    ].join('\n');
+
+    const text = await this.callGemini(payload, 4096, 0.65);
+
+    let raw: Partial<GenerationParams> = {};
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      console.warn('Gemini merge returned non-JSON — keeping previous params. Raw:', text.slice(0, 400));
+      return current;
+    }
+
+    return this.validateParams(raw, userRequest, {
+      inferThemeLayout: false,
+      mergeBase: current,
+    });
   }
 
   // ─── Phase 3: Process voice moment transcript ─────────────────────────────
@@ -115,37 +147,50 @@ export class LLMClient {
 
   // ─── Validation + fallback ────────────────────────────────────────────────
 
-  private validateParams(p: Partial<GenerationParams>, description: string): GenerationParams {
+  private validateParams(
+    p: Partial<GenerationParams>,
+    description: string,
+    opts: { inferThemeLayout: boolean; mergeBase?: GenerationParams },
+  ): GenerationParams {
+    const b = opts.mergeBase;
     const lower = description.toLowerCase();
 
-    // Layout inference
+    // Layout
     let layout = p.layout;
     if (!layout || !['linear', 'rooms', 'arena'].includes(layout)) {
-      if (/\b(arena|fight|survive|wave|defend)\b/.test(lower)) layout = 'arena';
-      else if (/\b(explore|dungeon|rooms|find|discover)\b/.test(lower)) layout = 'rooms';
-      else layout = 'linear';
+      if (b && !opts.inferThemeLayout) layout = b.layout;
+      else if (opts.inferThemeLayout) {
+        if (/\b(arena|fight|survive|wave|defend)\b/.test(lower)) layout = 'arena';
+        else if (/\b(explore|dungeon|rooms|find|discover)\b/.test(lower)) layout = 'rooms';
+        else layout = 'linear';
+      } else layout = 'linear';
     }
 
-    // Theme inference
+    // Theme
     let theme = p.theme;
     const validThemes = ['forest', 'underwater', 'space', 'city', 'dungeon', 'ice'];
     if (!theme || !validThemes.includes(theme)) {
-      if (/\b(water|ocean|sea|underwater)\b/.test(lower))  theme = 'underwater';
-      else if (/\b(space|stars|galaxy|planet)\b/.test(lower)) theme = 'space';
-      else if (/\b(dungeon|dark|cave|crypt)\b/.test(lower))   theme = 'dungeon';
-      else if (/\b(ice|snow|frozen|winter|cold)\b/.test(lower)) theme = 'ice';
-      else if (/\b(city|urban|building|neon)\b/.test(lower))  theme = 'city';
-      else theme = 'forest';
+      if (b && !opts.inferThemeLayout) theme = b.theme;
+      else if (opts.inferThemeLayout) {
+        if (/\b(water|ocean|sea|underwater)\b/.test(lower))  theme = 'underwater';
+        else if (/\b(space|stars|galaxy|planet)\b/.test(lower)) theme = 'space';
+        else if (/\b(dungeon|dark|cave|crypt)\b/.test(lower))   theme = 'dungeon';
+        else if (/\b(ice|snow|frozen|winter|cold)\b/.test(lower)) theme = 'ice';
+        else if (/\b(city|urban|building|neon)\b/.test(lower))  theme = 'city';
+        else theme = 'forest';
+      } else theme = 'forest';
     }
 
     const difficulty = typeof p.difficulty === 'number'
       ? Math.max(0, Math.min(1, p.difficulty))
-      : 0.4;
+      : typeof b?.difficulty === 'number'
+        ? b.difficulty
+        : 0.4;
 
     // Sections
     let sections = p.sections;
     if (!Array.isArray(sections) || sections.length < 2) {
-      sections = [
+      sections = b?.sections ?? [
         { type: 'intro',      widthTiles: 25, hazardDensity: 0,                enemyCount: 0,                    enemyArchetypes: [],              hasCheckpoint: false },
         { type: 'challenge',  widthTiles: 35, hazardDensity: difficulty * 0.5,  enemyCount: Math.ceil(difficulty * 3), enemyArchetypes: ['patrol'],  hasCheckpoint: false },
         { type: 'checkpoint', widthTiles: 15, hazardDensity: 0,                enemyCount: 0,                    enemyArchetypes: [],              hasCheckpoint: true  },
@@ -156,13 +201,19 @@ export class LLMClient {
 
     // Abilities
     const validAbilities = ['double_jump','wall_slide','dash','wall_jump','ground_pound','glide','swim','shoot','grapple','size_change','melee'];
-    let abilities = (p.abilities ?? []).filter(a => validAbilities.includes(a));
+    let abilities = (p.abilities ?? b?.abilities ?? []).filter(a => validAbilities.includes(a));
     if (!abilities.includes('double_jump')) abilities = ['double_jump', ...abilities];
     abilities = abilities.slice(0, 3);
 
-    // Rules
+    // Rules: model only; UI toggles applied later
     const validRules = ['gravity_flip','floor_decay','size_change','speed_boost','vision_limit','time_limit','wind','darkness','enemy_grow','mirror'];
-    const rules = (p.rules ?? []).filter(r => validRules.includes(r)).slice(0, 2) as any[];
+    const rawRules = p.rules ?? b?.rules ?? [];
+    const rules = rawRules.filter(r => validRules.includes(r)).filter((r, i, a) => a.indexOf(r) === i).slice(0, 2) as RuleId[];
+
+    const gp = p as { gravityStartsInverted?: boolean };
+    const gravityStartsInverted = typeof gp.gravityStartsInverted === 'boolean'
+      ? gp.gravityStartsInverted
+      : !!b?.gravityStartsInverted;
 
     // Palette
     const PALETTES: Record<string, { bg: string; palette: string[] }> = {
@@ -175,21 +226,39 @@ export class LLMClient {
     };
     const pal = PALETTES[theme] ?? PALETTES.forest;
 
+    const descOut = (typeof p.description === 'string' && p.description.length ? p.description : null)
+      ?? b?.description
+      ?? description;
+
+    const voiceMomentCount = typeof p.voiceMomentCount === 'number'
+      ? Math.min(99, Math.max(0, p.voiceMomentCount))
+      : typeof b?.voiceMomentCount === 'number'
+        ? b.voiceMomentCount
+        : 2;
+
+    const assetDescriptions = {
+      ...(b?.assetDescriptions ?? {}),
+      ...((typeof p.assetDescriptions === 'object' && p.assetDescriptions !== null)
+        ? p.assetDescriptions as Record<string, string>
+        : {}),
+    };
+
     return {
-      title:              p.title?.slice(0, 50) || description.slice(0, 40),
-      description,
+      title:              (p.title?.slice(0, 50) || b?.title || description.slice(0, 40)),
+      description:        descOut,
       layout,
       theme,
       difficulty,
       sections,
       abilities,
       rules,
-      voiceMomentCount:   typeof p.voiceMomentCount === 'number' ? Math.min(3, Math.max(1, p.voiceMomentCount)) : 2,
-      backgroundColor:    p.backgroundColor || pal.bg,
-      palette:            Array.isArray(p.palette) && p.palette.length >= 4 ? p.palette.slice(0, 4) : pal.palette,
-      assetDescriptions:  (typeof p.assetDescriptions === 'object' && p.assetDescriptions !== null)
-                            ? p.assetDescriptions as Record<string, string>
-                            : {},
+      voiceMomentCount,
+      backgroundColor:    p.backgroundColor || b?.backgroundColor || pal.bg,
+      palette:            Array.isArray(p.palette) && p.palette.length >= 4 ? p.palette.slice(0, 4) : (b?.palette ?? pal.palette),
+      assetDescriptions,
+      startingHealth:       p.startingHealth ?? b?.startingHealth,
+      gameSpeed:            p.gameSpeed ?? b?.gameSpeed,
+      ...(gravityStartsInverted ? { gravityStartsInverted: true } : {}),
     };
   }
 }

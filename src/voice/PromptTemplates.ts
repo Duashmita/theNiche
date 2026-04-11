@@ -63,13 +63,31 @@ ABILITIES — 1-3 from this list; ALWAYS include "double_jump":
 
 RULES — 0-2 from this list:
   "gravity_flip", "floor_decay", "speed_boost", "vision_limit", "time_limit", "wind", "darkness"
-  Use gravity_flip when description mentions: gravity, flip, invert, upside-down.
+  Use gravity_flip when the player asks for: gravity flip, flipped gravity, inverted gravity, upside-down play, anti-gravity, space/low-G platforming, or similar.
 
 PALETTE — exactly 4 hex color strings matching the theme: [ground, platform, accent, highlight]
 
-assetDescriptions: describe each asset in 5-8 words. Include "background" as a wide panoramic parallax layer: pretty, atmospheric landscape for the theme, simplified (not busy). Other assets: player hero-like, enemies threatening, coins rewarding, hazards dangerous, ground solid. Coherent set: consistent shape language; theme the whole set together.
+assetDescriptions: describe each asset in 5-8 words. Include "background" as a wide panoramic parallax layer: pretty, atmospheric landscape for the theme, simplified (not busy). For "ground" and "platform" you MUST request a seamless tileable texture (edges match when repeated side-by-side and top-to-bottom) so a grid of tiles reads as one floor, not the same icon stamped in every cell. Other assets: player hero-like, enemies threatening, coins rewarding, hazards dangerous. Coherent set: consistent shape language; theme the whole set together.
 
 OUTPUT ONLY valid JSON. No explanation, no markdown, no code fences.`;
+
+/** Used when the player clicks "Generate" to tweak an existing session — keep unchanged fields identical. */
+export const INCREMENTAL_PROMPT = `You are updating an EXISTING 2D platformer configuration. The player will describe a small change (add a modifier, change theme, etc.).
+
+You receive:
+1) currentParams — the full JSON object as it is now.
+2) userRequest — a short natural language instruction.
+
+Output the SAME schema as a full game design JSON (title, layout, theme, difficulty, sections, abilities, rules, voiceMomentCount, backgroundColor, palette, assetDescriptions).
+
+RULES:
+- Copy every field from currentParams unless the userRequest clearly asks to change it.
+- If the user only asks to add or change rules/modifiers, change ONLY "rules" (and maybe "title" or "description" if they rename the world). Keep sections, layout, theme, abilities unless explicitly mentioned.
+- If the user asks for a completely different biome and the current theme no longer fits, update theme and palette.
+- rules: at most 2 entries from: "gravity_flip", "floor_decay", "speed_boost", "vision_limit", "time_limit", "wind", "darkness"
+- abilities: always include "double_jump" if you output abilities; max 3 total.
+
+OUTPUT ONLY valid JSON for the full merged object. No markdown, no code fences.`;
 
 export const VOICE_MOMENT_PROMPT = `You interpret what a player said during a voice moment in a 2D platformer and return JSON state changes.
 

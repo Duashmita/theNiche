@@ -292,6 +292,43 @@ export class Renderer {
   // Tile drawing
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Sample a (possibly small) texture as a world-aligned repeating sheet so
+   * neighbouring tiles share one continuous pattern instead of the same corner crop.
+   */
+  private drawTiledImage(
+    ctx: CanvasRenderingContext2D,
+    img: HTMLImageElement,
+    worldX: number,
+    worldY: number,
+    destW: number,
+    destH: number,
+  ): void {
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    if (iw < 1 || ih < 1) return;
+    const mod = (n: number, m: number) => ((n % m) + m) % m;
+    let destTop = worldY;
+    let remainingH = destH;
+    let srcY = mod(worldY, ih);
+    while (remainingH > 0) {
+      const sliceH = Math.min(ih - srcY, remainingH);
+      let destLeft = worldX;
+      let remainingW = destW;
+      let srcX = mod(worldX, iw);
+      while (remainingW > 0) {
+        const sliceW = Math.min(iw - srcX, remainingW);
+        ctx.drawImage(img, srcX, srcY, sliceW, sliceH, destLeft, destTop, sliceW, sliceH);
+        remainingW -= sliceW;
+        destLeft += sliceW;
+        srcX = 0;
+      }
+      remainingH -= sliceH;
+      destTop += sliceH;
+      srcY = 0;
+    }
+  }
+
   private drawVisibleTiles(
     ctx: CanvasRenderingContext2D,
     tilemap: TilemapLike,
@@ -322,7 +359,7 @@ export class Renderer {
           case TileType.GROUND: {
             const groundImg = this.getAsset(themeId, 'ground');
             if (groundImg) {
-              ctx.drawImage(groundImg, wx, wy, ts, ts);
+              this.drawTiledImage(ctx, groundImg, wx, wy, ts, ts);
             } else {
               // Base fill
               ctx.fillStyle = palette.ground;
@@ -341,7 +378,7 @@ export class Renderer {
           case TileType.PLATFORM: {
             const platformImg = this.getAsset(themeId, 'platform');
             if (platformImg) {
-              ctx.drawImage(platformImg, wx, wy + 2, ts, ts - 2);
+              this.drawTiledImage(ctx, platformImg, wx, wy, ts, ts);
             } else {
               // Thin floating plank
               ctx.fillStyle = palette.platform;
@@ -498,8 +535,10 @@ export class Renderer {
     const themeId: ThemeId = (state.spec?.theme?.tileset as ThemeId) ?? 'forest';
     const playerImg = this.getAsset(themeId, 'player');
     if (playerImg && !isDead) {
-      // Sprite covers full body+head area; keep dynamic overlays (eyes, legs) on top
+      const prevSmooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
       ctx.drawImage(playerImg, player.x, player.y - headRadius, bw, bh + headRadius + 2);
+      ctx.imageSmoothingEnabled = prevSmooth;
     } else {
       // Procedural body
       ctx.fillStyle = isDead ? '#aa2222' : (isDash ? this.lighten(palette.player, 50) : palette.player);

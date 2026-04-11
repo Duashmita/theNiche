@@ -62,13 +62,6 @@ export class JuiceSystem {
         this.tweens.to(this.player as unknown as Record<string, number>, 'scaleY', 1.3, 50, {
           onComplete: () => this.tweens.to(this.player as unknown as Record<string, number>, 'scaleY', 1.0, 100),
         });
-
-        // Foot dust
-        this._spawnParticles(
-          this.player.x + this.player.width / 2,
-          this.player.y + this.player.height,
-          { count: 4, colors: ['#ffffff', '#aaaaff'], speed: 1.5, spread: 180, gravity: 0.2, lifetime: 200, size: 2 },
-        );
       }
     });
 
@@ -83,12 +76,14 @@ export class JuiceSystem {
         onComplete: () => this.tweens.to(this.player as unknown as Record<string, number>, 'scaleY', 1.0, 90),
       });
 
-      // Dust spreading left and right
-      this._spawnParticles(
-        this.player.x + this.player.width / 2,
-        this.player.y + this.player.height,
-        { count: data.vy > 6 ? 6 : 4, colors: ['#cccccc', '#aaaaaa', '#888888'], speed: 2, spread: 160, gravity: -0.05, lifetime: 250, size: 2 },
-      );
+      // Impact dust only on real landings (avoids grey trail while walking / micro-settling)
+      if (data.vy > 6.5) {
+        this._spawnParticles(
+          this.player.x + this.player.width / 2,
+          this.player.y + this.player.height,
+          { count: 5, colors: ['#cccccc', '#aaaaaa'], speed: 2, spread: 140, gravity: 0.12, lifetime: 180, size: 2 },
+        );
+      }
     });
 
     events.on('enemy_killed', (data: { entity: { x: number; y: number; width: number; height: number } }) => {
