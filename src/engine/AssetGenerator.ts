@@ -27,10 +27,12 @@ const TYPE_PROMPTS: Record<AssetType, string> = {
     'simplified readable shapes, not busy or cluttered, cohesive mood',
 };
 
-// In dev, proxied through Vite server to avoid CORS (see vite.config.ts server.proxy).
-// In production (GitHub Pages), call Replicate directly — they support browser CORS.
-const REPLICATE_URL = (import.meta as any).env?.PROD
-  ? 'https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions'
+// In dev: proxied through Vite server (see vite.config.ts server.proxy).
+// In production: routed through a Cloudflare Worker CORS proxy (proxy/worker.js).
+//   Set VITE_REPLICATE_PROXY=https://<worker>.workers.dev as a GitHub environment secret.
+const _proxyBase: string = (import.meta as any).env?.VITE_REPLICATE_PROXY ?? '';
+const REPLICATE_URL = _proxyBase
+  ? `${_proxyBase}/v1/models/black-forest-labs/flux-1.1-pro/predictions`
   : '/api/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions';
 
 export class AssetGenerator {
