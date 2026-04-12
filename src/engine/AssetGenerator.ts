@@ -30,16 +30,20 @@ const TYPE_PROMPTS: Record<AssetType, string> = {
 // In dev: proxied through Vite server (see vite.config.ts server.proxy).
 // In production: routed through a Cloudflare Worker CORS proxy (proxy/worker.js).
 //   Set VITE_REPLICATE_PROXY=https://<worker>.workers.dev as a GitHub environment secret.
+//   Without it in production, image generation is disabled (empty URL → hasKey() false).
 const _proxyBase: string = (import.meta as any).env?.VITE_REPLICATE_PROXY ?? '';
+const _isProd: boolean = (import.meta as any).env?.PROD ?? false;
 const REPLICATE_URL = _proxyBase
   ? `${_proxyBase}/v1/models/black-forest-labs/flux-1.1-pro/predictions`
-  : '/api/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions';
+  : _isProd
+    ? ''   // no proxy configured — disable image gen in production
+    : '/api/replicate/v1/models/black-forest-labs/flux-1.1-pro/predictions';
 
 export class AssetGenerator {
   constructor(private readonly apiKey: string) {}
 
   hasKey(): boolean {
-    return this.apiKey.length > 10;
+    return this.apiKey.length > 10 && REPLICATE_URL.length > 0;
   }
 
   /** Generate all assets sequentially (rate limit: burst=1, 6/min).
