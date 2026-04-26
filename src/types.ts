@@ -320,6 +320,7 @@ export interface SharedState {
   levelUpToast: { level: number; displayUntil: number } | null;
   /** Set to true when the player reaches the exit point. */
   levelComplete: boolean;
+  coins: number;
 }
 
 // ─── Asset generation ─────────────────────────────────────────────────────────

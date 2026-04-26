@@ -28,7 +28,6 @@ interface SettingsDraft {
   layout: LayoutType;
   sectionCount: number;
   health: number;
-  gameSpeed: number;
   abilities: Set<AbilityId>;
   voiceMomentCount: number;
   enemyArchetypes: Set<string>;
@@ -62,15 +61,12 @@ const ABILITIES: Array<{ id: AbilityId; label: string; group: string }> = [
   { id: 'melee',         label: 'Melee (E)',     group: 'Action'   },
   { id: 'grapple',       label: 'Grapple hook',  group: 'Action'   },
   { id: 'ground_pound',  label: 'Ground pound',  group: 'Action'   },
-  { id: 'size_change',   label: 'Size (Q)',      group: 'Action'   },
 ];
 
 const RULES: Array<{ id: RuleId; label: string; sub: string }> = [
   { id: 'floor_decay',  label: 'Floor decay',     sub: 'Platforms crumble on contact' },
   { id: 'gravity_flip', label: 'Gravity flip',    sub: 'Jumping flips gravity'        },
-  { id: 'vision_limit', label: 'Ambient dim',     sub: 'Caps brightness (use Options slider too)' },
   { id: 'wind',         label: 'Heavy wind',      sub: 'Horizontal push (strength in rule)' },
-  { id: 'speed_boost',  label: 'Speed boost',      sub: 'Faster simulation (mult in rule)' },
   { id: 'time_limit',   label: 'Time limit',      sub: 'Default 180s unless set in spec' },
 ];
 
@@ -105,7 +101,6 @@ export class WorldSettingsPanel {
     layout:            'linear',
     sectionCount:      5,
     health:            3,
-    gameSpeed:         1,
     abilities:         new Set(['double_jump']),
     voiceMomentCount:  2,
     enemyArchetypes:   new Set(['patrol', 'chaser']),
@@ -173,7 +168,6 @@ export class WorldSettingsPanel {
       layout:            'linear',
       sectionCount:      5,
       health:            3,
-      gameSpeed:         1,
       abilities:         new Set(['double_jump']),
       voiceMomentCount:  2,
       enemyArchetypes:   new Set(['patrol', 'chaser']),
@@ -193,7 +187,6 @@ export class WorldSettingsPanel {
     this.draft.layout           = params.layout;
     this.draft.sectionCount     = Math.max(3, params.sections?.length ?? this.draft.sectionCount);
     this.draft.difficulty       = params.difficulty;
-    this.draft.gameSpeed        = typeof params.gameSpeed === 'number' ? params.gameSpeed : this.draft.gameSpeed;
     this.draft.health           = params.startingHealth ?? this.draft.health;
     this.draft.abilities        = new Set(params.abilities ?? []);
     this.draft.rules            = new Set(params.rules ?? []);
@@ -253,8 +246,6 @@ export class WorldSettingsPanel {
             ${this.layoutPicker()}
             ${this.fieldLabel('World size', '14px 0 6px')}
             ${this.segmented(SECTION_PRESETS.map(s => s.label), (() => { const i = SECTION_PRESETS.findIndex(s => s.count === d.sectionCount); return i >= 0 ? i : 1; })(), 'sectionPreset')}
-            ${this.fieldLabel('Game speed', '14px 0 6px')}
-            ${this.sliderRow('gameSpeed', d.gameSpeed, 0.25, 2, 0.05, `${Math.round(d.gameSpeed * 100)}%`)}
           `)}
           ${this.section('Player loadout', `
             ${this.fieldLabel('Starting health')}
@@ -264,8 +255,6 @@ export class WorldSettingsPanel {
             ${this.checkboxGroup(ABILITIES.filter(a => a.group === 'Movement'), 'ability', d.abilities)}
             <div style="font-size:10px;color:#888;margin:8px 0 6px;">Action</div>
             ${this.checkboxGroup(ABILITIES.filter(a => a.group === 'Action'), 'ability', d.abilities)}
-            ${this.fieldLabel('Voice DM frequency', '14px 0 6px')}
-            ${this.segmented(VOICE_OPTIONS.map(v => v.label), (() => { const i = VOICE_OPTIONS.findIndex(v => v.value === d.voiceMomentCount); return i >= 0 ? i : 2; })(), 'voiceFreq')}
           `)}
         </div>
 
@@ -566,14 +555,6 @@ private attachHandlers(): void {
       });
     }
 
-    const spdSlider = this.el.querySelector<HTMLInputElement>('[data-slider="gameSpeed"]');
-    if (spdSlider) {
-      spdSlider.addEventListener('input', () => {
-        this.draft.gameSpeed = parseFloat(spdSlider.value);
-        const display = this.el.querySelector<HTMLSpanElement>('[data-slider="gameSpeed"] + span');
-        if (display) display.textContent = `${Math.round(this.draft.gameSpeed * 100)}%`;
-      });
-    }
   }
 
   // ── Build GenerationParams from draft ──────────────────────────────────────
@@ -617,7 +598,6 @@ private attachHandlers(): void {
       backgroundColor:   BG[d.theme],
       palette:           PALETTES[d.theme],
       startingHealth:    d.health,
-      gameSpeed:         d.gameSpeed,
     };
   }
 

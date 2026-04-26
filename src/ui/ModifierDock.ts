@@ -100,15 +100,6 @@ export class ModifierDock {
     if (this.invertGravityCb) this.invertGravityCb.checked = false;
   }
 
-  /** Show panel for a few seconds, then hide (Generate / Create new only). */
-  peekBriefly(): void {
-    this.cancelPeek();
-    this.root.classList.remove('modifier-dock--hidden');
-    this.peekTimer = setTimeout(() => {
-      this.peekTimer = null;
-      this.root.classList.add('modifier-dock--hidden');
-    }, PEEK_MS);
-  }
 
   /** Keep open until user dismisses or launches (after opening via Launch flow). */
   showStayOpen(): void {
