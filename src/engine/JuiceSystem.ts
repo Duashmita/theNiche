@@ -112,6 +112,16 @@ export class JuiceSystem {
       );
     });
 
+    events.on('health_orb_picked_up', (data: { entity: { x: number; y: number; width: number; height: number } }) => {
+      if (!data?.entity) return;
+      const e = data.entity;
+      this._spawnParticles(
+        e.x + e.width / 2,
+        e.y + e.height / 2,
+        { count: 10, colors: ['#44ff88', '#88ffcc', '#ffffff'], speed: 2.5, spread: 360, gravity: -0.15, lifetime: 500, size: 3 },
+      );
+    });
+
     events.on('player_damaged', (_data: { newHealth: number }) => {
       this.shakeIntensity = 7;
       this.damageFlash = true;

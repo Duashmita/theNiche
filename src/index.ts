@@ -364,8 +364,8 @@ events.on('enemy_killed', (data: any) => {
 });
 
 events.on('health_orb_picked_up', () => {
-  state.health = Math.min(state.maxHealth, state.health + 1);
-  events.emit('play_sound', { id: 'coin' });
+  state.health = Math.min(state.maxHealth, state.health + 2);
+  events.emit('play_sound', { id: 'checkpoint' });
 });
 
 events.on('player_stomp_bounce', () => {

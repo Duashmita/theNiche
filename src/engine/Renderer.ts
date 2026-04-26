@@ -8,7 +8,7 @@ import {
   Particle,
   AssetMap,
 } from '../types';
-import { clamp } from '../utils/math';
+import { clamp, lerp } from '../utils/math';
 
 // ─── Forward-compatible minimal interfaces ────────────────────────────────────
 
@@ -84,6 +84,9 @@ export class Renderer {
   // ─── Generated asset map (swapped in after Imagen calls resolve) ──────────
   private assets: AssetMap = new Map();
 
+  private ghostHealth: number = 0;
+  private prevHealth:  number = 0;
+
   setAssets(assets: AssetMap): void { this.assets = assets; }
 
   patchAssets(partial: AssetMap): void {
@@ -105,6 +108,7 @@ export class Renderer {
     tilemap: TilemapLike,
     camera: CameraLike,
     juice: JuiceLike,
+    dt: number = 16.67,
   ): void {
     const ctx    = this.ctx;
     const spec   = state.spec;
@@ -178,6 +182,17 @@ export class Renderer {
 
     // 8. Particles — screen-space (no camera offset)
     this.drawParticles(ctx, juice.particles, camera);
+
+    // Ghost health drain — snaps on damage, lerps back over ~1.8s
+    if (state.health < this.prevHealth) {
+      this.ghostHealth = this.prevHealth;
+    }
+    this.prevHealth = state.health;
+    const ghostLerpRate = 1 - Math.pow(0.95, dt / 16.67);
+    if (this.ghostHealth > state.health) {
+      this.ghostHealth = lerp(this.ghostHealth, state.health, ghostLerpRate);
+      if (this.ghostHealth - state.health < 0.01) this.ghostHealth = state.health;
+    }
 
     // 9. HUD overlay (screen-space)
     if (spec) {
@@ -1047,23 +1062,8 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // ── Health hearts (top-left) ──────────────────────────────────────────
-    const maxHearts = Math.min(state.maxHealth, 10); // cap display at 10
-    const curHearts = Math.floor(state.health);
-    for (let i = 0; i < maxHearts; i++) {
-      const hx = 4 + i * 8;
-      const hy = 4;
-      const filled = i < curHearts;
-      this.drawHeart(ctx, hx, hy, filled);
-    }
-    // Show numeric health when maxHealth > 10
-    if (state.maxHealth > 10) {
-      ctx.fillStyle = '#ff8888';
-      ctx.font = '5px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${Math.floor(state.health)}/${state.maxHealth}`, 4, 4);
-    }
+    // ── Health bar (top-left) ─────────────────────────────────────────────
+    this.drawHealthBar(ctx, state);
 
     // ── XP bar ────────────────────────────────────────────────────────────
     const barX   = 4;
@@ -1227,6 +1227,50 @@ export class Renderer {
     ctx.fillText('EXIT', x + ts, y - ts * 2 - 2);
 
     ctx.restore();
+  }
+
+  private drawHealthBar(ctx: CanvasRenderingContext2D, state: SharedState): void {
+    const BAR_X = 13, BAR_Y = 5, BAR_W = 56, BAR_H = 5;
+
+    const hp    = clamp(state.health,     0, state.maxHealth);
+    const ghost = clamp(this.ghostHealth, 0, state.maxHealth);
+    const max   = state.maxHealth > 0 ? state.maxHealth : 1;
+    const hpRatio    = hp    / max;
+    const ghostRatio = ghost / max;
+
+    const fillColor = hpRatio > 0.60 ? '#44cc44'
+                    : hpRatio > 0.30 ? '#ddcc22'
+                    : '#cc2233';
+
+    this.drawHeart(ctx, 4, 4, hp > 0);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(BAR_X - 1, BAR_Y - 1, BAR_W + 2, BAR_H + 2);
+
+    ctx.fillStyle = '#221122';
+    ctx.fillRect(BAR_X, BAR_Y, BAR_W, BAR_H);
+
+    const ghostW = Math.floor(ghostRatio * BAR_W);
+    if (ghostW > 0) {
+      ctx.fillStyle = '#cc8822';
+      ctx.fillRect(BAR_X, BAR_Y, ghostW, BAR_H);
+    }
+
+    const liveW = Math.floor(hpRatio * BAR_W);
+    if (liveW > 0) {
+      ctx.fillStyle = fillColor;
+      ctx.fillRect(BAR_X, BAR_Y, liveW, BAR_H);
+      ctx.fillStyle = '#88ff88';
+      ctx.fillRect(BAR_X, BAR_Y, liveW, 1);
+    }
+
+    if (state.maxHealth > 10) {
+      ctx.fillStyle = '#ffbbbb';
+      ctx.font = '4px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${Math.floor(hp)}/${state.maxHealth}`, BAR_X + BAR_W + 2, BAR_Y);
+    }
   }
 
   /** Draw a small pixel-art heart at (x, y). */
