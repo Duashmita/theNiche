@@ -183,18 +183,26 @@ export class EntitySystem {
     for (const entity of this.entities) {
       if (!entity.active) continue;
 
-      // ── Bulletproof Coin Collection ──
+      // ── Coin Collection ──
       if (entity.type === 'collectible' && entity.active) {
-        const hit = player.x < entity.x + entity.width &&
-                    player.x + player.width > entity.x &&
-                    player.y < entity.y + entity.height &&
-                    player.y + player.height > entity.y;
-        
-        if (hit) {
+        const overlap = player.x < entity.x + entity.width &&
+                        player.x + player.width > entity.x &&
+                        player.y < entity.y + entity.height &&
+                        player.y + player.height > entity.y;
+
+        // While airborne, allow a small proximity grab (~10px center-to-center)
+        const cx = entity.x + entity.width  / 2;
+        const cy = entity.y + entity.height / 2;
+        const px = player.x + player.width  / 2;
+        const py = player.y + player.height / 2;
+        const dx = cx - px, dy = cy - py;
+        const nearbyAirborne = !player.onGround && (dx * dx + dy * dy) < 10 * 10;
+
+        if (overlap || nearbyAirborne) {
           entity.active = false;
           events.emit('collectible_picked_up', { entity });
-          events.emit('play_sound', { id: 'coin' }); // Wakes up audio engine instantly
-          continue; // Skip the rest of the loop for this coin
+          events.emit('play_sound', { id: 'coin' });
+          continue;
         }
       }
 
@@ -261,6 +269,14 @@ export class EntitySystem {
           entity.active = false;
           events.emit('health_orb_picked_up', { entity });
         }
+      }
+    }
+
+    // Deactivate ground-based enemies that fall off the world
+    for (const entity of this.entities) {
+      if (entity.active && entity.type === 'enemy' && entity.archetype !== 'projectile' &&
+          entity.archetype !== 'flyer' && entity.y > tilemap.tileSize * 40) {
+        entity.active = false;
       }
     }
 
@@ -383,45 +399,84 @@ export class EntitySystem {
   // ─── Chaser movement ──────────────────────────────────────────────────────────
 
   private _updateChaser(entity: Entity, player: any, tilemap: TilemapLike, events: EventBus, dt: number): void {
-    const d = dist(entity.x, entity.y, player.x, player.y);
+    const ts = tilemap.tileSize;
+    const belowRow = Math.floor((entity.y + entity.height + 2) / ts);
+    const standingTile = tilemap.getTileAt(
+      Math.floor((entity.x + entity.width / 2) / ts),
+      belowRow,
+    );
+    const onGround = standingTile === 1 && entity.vy <= 1;
 
-    if (d < entity.aggroRange) {
+    const horizDist = Math.abs(player.x - entity.x);
+    const vertDist  = Math.abs(player.y - entity.y);
+    // Only chase when player is on roughly the same level (within 1.5 tiles vertically)
+    const sameLevel = vertDist < ts * 1.5;
+    const shouldChase = horizDist < entity.aggroRange && sameLevel;
+
+    if (shouldChase) {
       const baseSpeed = (entity.params.speed as number) || 1.5;
-      const speed = Math.min(baseSpeed, 1.5 + (1 - d / entity.aggroRange) * 2);
+      const speed = Math.min(baseSpeed, 1.5 + (1 - horizDist / entity.aggroRange) * 2);
+      const dirX = Math.sign(player.x - entity.x);
 
-      entity.vx = Math.sign(player.x - entity.x) * speed;
-      entity.vy += 0.5; // gravity
-      entity.vy = Math.min(entity.vy, 8);
+      const edgeCheckX = dirX > 0
+        ? entity.x + entity.width + ts
+        : entity.x - ts;
+      const aheadTile = tilemap.getTileAt(Math.floor(edgeCheckX / ts), belowRow);
 
-      entity.x += entity.vx;
-      entity.y += entity.vy;
+      if (onGround && aheadTile !== 1) {
+        entity.vx = 0;
+      } else {
+        entity.vx = dirX * speed;
+        entity.params.patrolDir = dirX;
+      }
+    } else {
+      // Patrol back and forth near spawn when player is out of range or on different level
+      const patrolSpeed = 0.7;
 
-      // Simple ground check — stop falling when standing on solid tile
-      const groundTile = tilemap.getTileAt(
-        Math.floor((entity.x + entity.width / 2) / tilemap.tileSize),
-        Math.floor((entity.y + entity.height + 2) / tilemap.tileSize),
+      // Remember spawn X on first frame so we don't wander across the level
+      if (entity.params.spawnX === undefined) {
+        entity.params.spawnX = entity.x;
+        entity.params.patrolDir = -1; // start facing left (toward player approaching)
+      }
+      const spawnX = entity.params.spawnX as number;
+      const pDir   = (entity.params.patrolDir as number) || -1;
+      const maxRange = ts * 4; // patrol ±4 tiles from spawn
+
+      const wallAheadTile = tilemap.getTileAt(
+        Math.floor((pDir > 0 ? entity.x + entity.width + 2 : entity.x - 2) / ts),
+        Math.floor((entity.y + entity.height / 2) / ts),
       );
-      if (groundTile === 1 && entity.vy > 0) {
-        entity.y = Math.floor((entity.y + entity.height) / tilemap.tileSize) * tilemap.tileSize - entity.height;
-        entity.vy = 0;
-      }
+      const edgeTile = tilemap.getTileAt(
+        Math.floor((pDir > 0 ? entity.x + entity.width + ts : entity.x - ts) / ts),
+        belowRow,
+      );
+      const tooFar = pDir > 0
+        ? entity.x > spawnX + maxRange
+        : entity.x < spawnX - maxRange;
 
-      // Aimed shot toward player every ~2s while in aggro range
-      const chaserShoot = ((entity.params.shootTimer as number | undefined) ?? 2000) - dt;
-      entity.params.shootTimer = chaserShoot;
-      if (chaserShoot <= 0) {
-        entity.params.shootTimer = 2000;
-        const angle = Math.atan2(player.y - entity.y, player.x - entity.x);
-        const projSpeed = 3;
-        this.spawnEnemy({
-          id:        `proj_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          type:      'enemy',
-          archetype: 'projectile',
-          x:         Math.floor((entity.x + entity.width  / 2) / tilemap.tileSize),
-          y:         Math.floor((entity.y + entity.height / 2) / tilemap.tileSize),
-          params:    { vx: Math.cos(angle) * projSpeed, vy: Math.sin(angle) * projSpeed, lifetime: 1000 },
-        });
+      if (!onGround) {
+        entity.vx = 0; // don't drift horizontally while airborne
+      } else if (edgeTile !== 1 || wallAheadTile === 1 || tooFar) {
+        entity.params.patrolDir = -pDir;
+        entity.vx = -pDir * patrolSpeed;
+      } else {
+        entity.vx = pDir * patrolSpeed;
       }
+    }
+
+    entity.vy += 0.5;
+    entity.vy = Math.min(entity.vy, 8);
+    entity.x += entity.vx;
+    entity.y += entity.vy;
+
+    // Ground snap
+    const groundTile = tilemap.getTileAt(
+      Math.floor((entity.x + entity.width / 2) / ts),
+      Math.floor((entity.y + entity.height + 2) / ts),
+    );
+    if (groundTile === 1 && entity.vy > 0) {
+      entity.y = Math.floor((entity.y + entity.height) / ts) * ts - entity.height;
+      entity.vy = 0;
     }
   }
 
