@@ -111,6 +111,7 @@ const state: SharedState = {
   ruleSpeedMult: 1,
   timeRemainingMs: null,
   ruleBrightnessFactor: 1,
+  coins: 0,
 
   // ── Player progression ──────────────────────────────────────────────────
   playerLevel:       1,
@@ -361,6 +362,13 @@ events.on('enemy_killed', (data: any) => {
     entitySystem.spawnHealthOrb(data.entity.x, data.entity.y);
   }
   state.score += 50;
+});
+
+// ── Track Coin Pickups ──
+events.on('collectible_picked_up', (data: any) => {
+  if (data?.entity?.archetype === 'coin') {
+    state.coins = (state.coins || 0) + 1;
+  }
 });
 
 events.on('health_orb_picked_up', () => {
@@ -646,7 +654,6 @@ async function startDemoSession(): Promise<void> {
   enterPlayView();
   initGame(DEMO_SPEC);
   voiceMomentSystemModule?.setSpec(DEMO_SPEC);
-  modifierDock?.peekBriefly();
 }
 
 async function loadGameFromFile(json: string): Promise<void> {
@@ -702,7 +709,6 @@ async function runGeneration(description: string): Promise<void> {
     hideHtmlLoading();
     initGame(spec);
     voiceMomentSystemModule?.setSpec(spec);
-    modifierDock?.peekBriefly();
 
     if (assetGenerator.hasKey()) {
       assetGenerator.generate(params, (partial) => renderer.patchAssets(partial)).catch(() => {});
@@ -729,7 +735,6 @@ async function createNewInPlay(): Promise<void> {
   const { DEMO_SPEC } = await import('./generator/DemoSpec');
   initGame(DEMO_SPEC);
   voiceMomentSystemModule?.setSpec(DEMO_SPEC);
-  modifierDock?.peekBriefly();
 }
 
 // ─── Boot ───────────────────────────────────────────────────────────────────────

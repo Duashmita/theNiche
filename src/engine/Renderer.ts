@@ -1047,51 +1047,63 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // ── Health hearts (top-left) ──────────────────────────────────────────
-    const maxHearts = Math.min(state.maxHealth, 10); // cap display at 10
-    const curHearts = Math.floor(state.health);
+    // ── Options (top-left) ────────────────────────────────────────────────
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '5px monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('[ESC] OPTIONS', 4, 4);
+
+    // Reset text baseline so we don't accidentally break other UI elements!
+    ctx.textBaseline = 'alphabetic';
+
+    // ── Health hearts ─────────────────────────────────────────────────────
+    const maxHealth = state.maxHealth ?? 3;
+    const health = state.health ?? 3;
+    const maxHearts = Math.min(maxHealth, 10);
+    const curHearts = Math.floor(health);
+
     for (let i = 0; i < maxHearts; i++) {
       const hx = 4 + i * 8;
-      const hy = 4;
-      const filled = i < curHearts;
-      this.drawHeart(ctx, hx, hy, filled);
+      const hy = 18; // Pushed down to 18
+      this.drawHeart(ctx, hx, hy, i < curHearts);
     }
-    // Show numeric health when maxHealth > 10
-    if (state.maxHealth > 10) {
+    if (maxHealth > 10) {
       ctx.fillStyle = '#ff8888';
-      ctx.font = '5px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${Math.floor(state.health)}/${state.maxHealth}`, 4, 4);
+      ctx.fillText(`${Math.floor(health)}/${maxHealth}`, 4, 18);
     }
 
     // ── XP bar ────────────────────────────────────────────────────────────
     const barX   = 4;
-    const xpBarY = 13;
+    const xpBarY = 27; // Pushed down to 27
     const barW   = 60;
     const barH   = 2;
-    const xpRatio = state.xpToNext > 0 ? clamp(state.playerXP / state.xpToNext, 0, 1) : 0;
+    const xpRatio = state.xpToNext > 0 ? clamp((state.playerXP ?? 0) / state.xpToNext, 0, 1) : 0;
 
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(barX, xpBarY, barW, barH);
     ctx.fillStyle = '#8866ff';
     ctx.fillRect(barX, xpBarY, Math.floor(barW * xpRatio), barH);
 
-    // Level label inline with XP bar
     ctx.fillStyle = '#ccaaff';
-    ctx.font = '4px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`LV${state.playerLevel}`, barX + barW + 2, xpBarY - 1);
+    // Adjusted the LV text Y coordinate so it perfectly centers with the bar
+    ctx.fillText(`LV${state.playerLevel ?? 1}`, barX + barW + 3, xpBarY + 2);
 
-    // ── Energy bar ────────────────────────────────────────────────────────
-    const enBarY  = xpBarY + 4;
-    const enRatio = state.maxEnergy > 0 ? clamp(state.energy / state.maxEnergy, 0, 1) : 0;
+    // ── Coin tracker ──────────────────────────────────────────────────────
+    const coinY = 36; // Pushed down to 36
 
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(barX, enBarY, barW, barH);
-    ctx.fillStyle = '#44aaff';
-    ctx.fillRect(barX, enBarY, Math.floor(barW * enRatio), barH);
+    // Draw a tiny gold coin icon
+    ctx.fillStyle = '#ffcc44';
+    ctx.beginPath();
+    ctx.arc(6, coinY - 1, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Draw a little white shine on the coin
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(5, coinY - 2, 1, 1);
+
+    // Draw the coin count
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`x ${state.coins ?? 0}`, 11, coinY + 1);
 
     // ── Score (top-right) ─────────────────────────────────────────────────
     ctx.fillStyle = '#ffffff';
