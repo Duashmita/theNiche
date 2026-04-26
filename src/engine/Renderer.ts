@@ -1067,7 +1067,7 @@ export class Renderer {
 
     // ── XP bar ────────────────────────────────────────────────────────────
     const barX   = 4;
-    const xpBarY = 27;
+    const xpBarY = 15;
     const barW   = 60;
     const barH   = 2;
     const xpRatio = state.xpToNext > 0 ? clamp((state.playerXP ?? 0) / state.xpToNext, 0, 1) : 0;
