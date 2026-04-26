@@ -1264,6 +1264,15 @@ export class Renderer {
       ctx.fillRect(BAR_X, BAR_Y, liveW, 1);
     }
 
+    // Segment dividers — one per HP unit, cut through fill layers
+    if (state.maxHealth > 1 && state.maxHealth <= 10) {
+      ctx.fillStyle = '#000000';
+      for (let i = 1; i < state.maxHealth; i++) {
+        const divX = BAR_X + Math.round((i / state.maxHealth) * BAR_W);
+        ctx.fillRect(divX, BAR_Y, 1, BAR_H);
+      }
+    }
+
     if (state.maxHealth > 10) {
       ctx.fillStyle = '#ffbbbb';
       ctx.font = '4px monospace';

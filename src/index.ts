@@ -363,6 +363,11 @@ events.on('enemy_killed', (data: any) => {
   state.score += 50;
 });
 
+events.on('health_setting_changed', (data: { maxHealth: number }) => {
+  state.maxHealth = data.maxHealth;
+  state.health = Math.min(state.health, state.maxHealth);
+});
+
 events.on('health_orb_picked_up', () => {
   state.health = Math.min(state.maxHealth, state.health + 2);
   events.emit('play_sound', { id: 'checkpoint' });
