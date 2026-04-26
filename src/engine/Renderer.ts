@@ -1088,6 +1088,25 @@ export class Renderer {
     const enBarY  = xpBarY + 4;
     const enRatio = state.maxEnergy > 0 ? clamp(state.energy / state.maxEnergy, 0, 1) : 0;
 
+        // Adjusted the LV text Y coordinate so it perfectly centers with the bar
+    ctx.fillText(`LV${state.playerLevel ?? 1}`, barX + barW + 3, xpBarY + 2);
+
+    // ── Coin tracker ──────────────────────────────────────────────────────
+    const coinY = 36; // Pushed down to 36
+
+    // Draw a tiny gold coin icon
+    ctx.fillStyle = '#ffcc44';
+    ctx.beginPath();
+    ctx.arc(6, coinY - 1, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Draw a little white shine on the coin
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(5, coinY - 2, 1, 1);
+
+        // Draw the coin count
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`x ${state.coins ?? 0}`, 11, coinY + 1);
+
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(barX, enBarY, barW, barH);
     ctx.fillStyle = '#44aaff';
