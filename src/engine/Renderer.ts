@@ -8,7 +8,7 @@ import {
   Particle,
   AssetMap,
 } from '../types';
-import { clamp } from '../utils/math';
+import { clamp, lerp } from '../utils/math';
 
 // ─── Forward-compatible minimal interfaces ────────────────────────────────────
 
@@ -84,6 +84,9 @@ export class Renderer {
   // ─── Generated asset map (swapped in after Imagen calls resolve) ──────────
   private assets: AssetMap = new Map();
 
+  private ghostHealth: number = 0;
+  private prevHealth:  number = 0;
+
   setAssets(assets: AssetMap): void { this.assets = assets; }
 
   patchAssets(partial: AssetMap): void {
@@ -105,6 +108,7 @@ export class Renderer {
     tilemap: TilemapLike,
     camera: CameraLike,
     juice: JuiceLike,
+    dt: number = 16.67,
   ): void {
     const ctx    = this.ctx;
     const spec   = state.spec;
@@ -178,6 +182,17 @@ export class Renderer {
 
     // 8. Particles — screen-space (no camera offset)
     this.drawParticles(ctx, juice.particles, camera);
+
+    // Ghost health drain — snaps on damage, lerps back over ~1.8s
+    if (state.health < this.prevHealth) {
+      this.ghostHealth = this.prevHealth;
+    }
+    this.prevHealth = state.health;
+    const ghostLerpRate = 1 - Math.pow(0.95, dt / 16.67);
+    if (this.ghostHealth > state.health) {
+      this.ghostHealth = lerp(this.ghostHealth, state.health, ghostLerpRate);
+      if (this.ghostHealth - state.health < 0.01) this.ghostHealth = state.health;
+    }
 
     // 9. HUD overlay (screen-space)
     if (spec) {
@@ -1047,51 +1062,20 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // ── Health hearts (top-left) ──────────────────────────────────────────
-    const maxHearts = Math.min(state.maxHealth, 10); // cap display at 10
-    const curHearts = Math.floor(state.health);
-    for (let i = 0; i < maxHearts; i++) {
-      const hx = 4 + i * 8;
-      const hy = 4;
-      const filled = i < curHearts;
-      this.drawHeart(ctx, hx, hy, filled);
-    }
-    // Show numeric health when maxHealth > 10
-    if (state.maxHealth > 10) {
-      ctx.fillStyle = '#ff8888';
-      ctx.font = '5px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${Math.floor(state.health)}/${state.maxHealth}`, 4, 4);
-    }
+    // ── Health bar (top-left) ─────────────────────────────────────────────
+    this.drawHealthBar(ctx, state);
 
     // ── XP bar ────────────────────────────────────────────────────────────
     const barX   = 4;
-    const xpBarY = 15;
+    const xpBarY = 13;
     const barW   = 60;
     const barH   = 2;
-    const xpRatio = state.xpToNext > 0 ? clamp((state.playerXP ?? 0) / state.xpToNext, 0, 1) : 0;
+    const xpRatio = state.xpToNext > 0 ? clamp(state.playerXP / state.xpToNext, 0, 1) : 0;
 
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(barX, xpBarY, barW, barH);
     ctx.fillStyle = '#8866ff';
     ctx.fillRect(barX, xpBarY, Math.floor(barW * xpRatio), barH);
-
-    // ── Coin tracker ──────────────────────────────────────────────────────
-    const coinY = 36; // Pushed down to 36
-
-    // Draw a tiny gold coin icon
-    ctx.fillStyle = '#ffcc44';
-    ctx.beginPath();
-    ctx.arc(6, coinY - 1, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    // Draw a little white shine on the coin
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(5, coinY - 2, 1, 1);
-
-    // Draw the coin count
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`x ${state.coins ?? 0}`, 11, coinY + 1);
 
     // Level label inline with XP bar
     ctx.fillStyle = '#ccaaff';
@@ -1243,6 +1227,59 @@ export class Renderer {
     ctx.fillText('EXIT', x + ts, y - ts * 2 - 2);
 
     ctx.restore();
+  }
+
+  private drawHealthBar(ctx: CanvasRenderingContext2D, state: SharedState): void {
+    const BAR_X = 13, BAR_Y = 5, BAR_W = 56, BAR_H = 5;
+
+    const hp    = clamp(state.health,     0, state.maxHealth);
+    const ghost = clamp(this.ghostHealth, 0, state.maxHealth);
+    const max   = state.maxHealth > 0 ? state.maxHealth : 1;
+    const hpRatio    = hp    / max;
+    const ghostRatio = ghost / max;
+
+    const fillColor = hpRatio > 0.60 ? '#44cc44'
+                    : hpRatio > 0.30 ? '#ddcc22'
+                    : '#cc2233';
+
+    this.drawHeart(ctx, 4, 4, hp > 0);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(BAR_X - 1, BAR_Y - 1, BAR_W + 2, BAR_H + 2);
+
+    ctx.fillStyle = '#221122';
+    ctx.fillRect(BAR_X, BAR_Y, BAR_W, BAR_H);
+
+    const ghostW = Math.floor(ghostRatio * BAR_W);
+    if (ghostW > 0) {
+      ctx.fillStyle = '#cc8822';
+      ctx.fillRect(BAR_X, BAR_Y, ghostW, BAR_H);
+    }
+
+    const liveW = Math.floor(hpRatio * BAR_W);
+    if (liveW > 0) {
+      ctx.fillStyle = fillColor;
+      ctx.fillRect(BAR_X, BAR_Y, liveW, BAR_H);
+      ctx.fillStyle = '#88ff88';
+      ctx.fillRect(BAR_X, BAR_Y, liveW, 1);
+    }
+
+    // Segment dividers — one per HP unit, cut through fill layers
+    if (state.maxHealth > 1 && state.maxHealth <= 10) {
+      ctx.fillStyle = '#000000';
+      for (let i = 1; i < state.maxHealth; i++) {
+        const divX = BAR_X + Math.round((i / state.maxHealth) * BAR_W);
+        ctx.fillRect(divX, BAR_Y, 1, BAR_H);
+      }
+    }
+
+    if (state.maxHealth > 10) {
+      ctx.fillStyle = '#ffbbbb';
+      ctx.font = '4px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${Math.floor(hp)}/${state.maxHealth}`, BAR_X + BAR_W + 2, BAR_Y);
+    }
   }
 
   /** Draw a small pixel-art heart at (x, y). */
