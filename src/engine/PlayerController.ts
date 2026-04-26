@@ -69,6 +69,7 @@ export class PlayerController {
   /** Active melee swing window (ms); EntitySystem applies hitbox while > 0. */
   meleeTimer = 0;
   shootCooldown = 0;
+  iFrameTimer = 0;
 
   // ── Ability state ───────────────────────────────────────────────────────────
   private abilities: Set<AbilityId> = new Set();
@@ -410,6 +411,7 @@ export class PlayerController {
 
     this.meleeTimer = Math.max(0, this.meleeTimer - dt);
     this.shootCooldown = Math.max(0, this.shootCooldown - dt);
+    this.iFrameTimer = Math.max(0, this.iFrameTimer - dt);
 
     // ── Health + energy regen (out of combat) ─────────────────────────────────
     if (!state.inCombat) {
@@ -435,13 +437,14 @@ export class PlayerController {
   }
   takeDamage(events: any, state: any): void {
     if (!this.alive) return;
-    
+    if (this.iFrameTimer > 0) return;
+
+    this.iFrameTimer = 800;
     state.health -= 1;
     events.emit('player_took_damage', { health: state.health });
 
-    // Tiny knockback bounce
-    this.vy = -6; 
-    
+    this.vy = -6;
+
     if (state.health <= 0) {
       this.alive = false;
       this.state = 'dead';

@@ -198,6 +198,7 @@ export class GameLoop {
       this.tilemap,
       this.camera,
       this.juice,
+      dt,
     );
 
     // ── 8. Juice (screen-shake decay, freeze-frame timer, particle step) ─────

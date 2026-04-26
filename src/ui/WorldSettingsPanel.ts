@@ -517,7 +517,10 @@ private attachHandlers(): void {
         const key = el.dataset.seg!;
         const idx = parseInt(el.dataset.idx!, 10);
         if (key === 'sectionPreset') this.draft.sectionCount = [3, 5, 8][idx];
-        else if (key === 'health') this.draft.health = [1, 3, 5][idx];
+        else if (key === 'health') {
+          this.draft.health = [1, 3, 5][idx];
+          this.events.emit('health_setting_changed', { maxHealth: this.draft.health });
+        }
         else if (key === 'voiceFreq') this.draft.voiceMomentCount = [0, 1, 2, 99][idx];
         else if (key === 'density') this.draft.enemyDensity = idx;
         else if (key === 'coinDensity') (this.draft as any).coinDensity = idx; // NEW COIN SETTING

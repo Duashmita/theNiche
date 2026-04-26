@@ -200,11 +200,11 @@ export class EntitySystem {
 
       switch (entity.archetype) {
         case 'patrol':
-          this._updatePatrol(entity, tilemap);
+          this._updatePatrol(entity, player, tilemap, events, dt);
           break;
 
         case 'chaser':
-          this._updateChaser(entity, player, tilemap);
+          this._updateChaser(entity, player, tilemap, events, dt);
           break;
         
         case 'boss':
@@ -216,7 +216,7 @@ export class EntitySystem {
           break;
 
         case 'projectile':
-          this._updateProjectile(entity, tilemap, dt, events);
+          this._updateProjectile(entity, player, tilemap, dt, events);
           break;
 
         case 'flyer':
@@ -328,7 +328,7 @@ export class EntitySystem {
 
   // ─── Patrol movement ──────────────────────────────────────────────────────────
 
-  private _updatePatrol(entity: Entity, tilemap: TilemapLike): void {
+  private _updatePatrol(entity: Entity, player: any, tilemap: TilemapLike, events: EventBus, dt: number): void {
     entity.x += entity.direction * entity.speed;
 
     const ahead = entity.direction > 0
@@ -348,6 +348,25 @@ export class EntitySystem {
     if (tileAhead === 1 || tileBelow === 0) {
       entity.direction = (entity.direction === 1 ? -1 : 1) as 1 | -1;
     }
+
+    // Periodic horizontal shot when player is on the same level and in range
+    const dx = player.x - entity.x;
+    const dy = player.y - entity.y;
+    const patrolShoot = ((entity.params.shootTimer as number | undefined) ?? 2500) - dt;
+    entity.params.shootTimer = patrolShoot;
+    if (patrolShoot <= 0 && Math.abs(dy) < 20 && Math.abs(dx) < 140) {
+      entity.params.shootTimer = 2500;
+      const dir = (Math.sign(dx) || 1) as 1 | -1;
+      entity.direction = dir;
+      this.spawnEnemy({
+        id:        `proj_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        type:      'enemy',
+        archetype: 'projectile',
+        x:         Math.floor((entity.x + entity.width  / 2) / tilemap.tileSize),
+        y:         Math.floor((entity.y + entity.height / 2) / tilemap.tileSize),
+        params:    { vx: dir * 3, vy: 0, lifetime: 1200 },
+      });
+    }
   }
 
   // ─── Flyer movement ───────────────────────────────────────────────────────────
@@ -363,7 +382,7 @@ export class EntitySystem {
 
   // ─── Chaser movement ──────────────────────────────────────────────────────────
 
-  private _updateChaser(entity: Entity, player: PlayerLike, tilemap: TilemapLike): void {
+  private _updateChaser(entity: Entity, player: any, tilemap: TilemapLike, events: EventBus, dt: number): void {
     const d = dist(entity.x, entity.y, player.x, player.y);
 
     if (d < entity.aggroRange) {
@@ -385,6 +404,23 @@ export class EntitySystem {
       if (groundTile === 1 && entity.vy > 0) {
         entity.y = Math.floor((entity.y + entity.height) / tilemap.tileSize) * tilemap.tileSize - entity.height;
         entity.vy = 0;
+      }
+
+      // Aimed shot toward player every ~2s while in aggro range
+      const chaserShoot = ((entity.params.shootTimer as number | undefined) ?? 2000) - dt;
+      entity.params.shootTimer = chaserShoot;
+      if (chaserShoot <= 0) {
+        entity.params.shootTimer = 2000;
+        const angle = Math.atan2(player.y - entity.y, player.x - entity.x);
+        const projSpeed = 3;
+        this.spawnEnemy({
+          id:        `proj_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          type:      'enemy',
+          archetype: 'projectile',
+          x:         Math.floor((entity.x + entity.width  / 2) / tilemap.tileSize),
+          y:         Math.floor((entity.y + entity.height / 2) / tilemap.tileSize),
+          params:    { vx: Math.cos(angle) * projSpeed, vy: Math.sin(angle) * projSpeed, lifetime: 1000 },
+        });
       }
     }
   }
@@ -687,7 +723,7 @@ export class EntitySystem {
     }
   }
 
-  private _updateProjectile(entity: any, tilemap: any, dt: number, events: EventBus): void {
+  private _updateProjectile(entity: any, player: any, tilemap: any, dt: number, events: EventBus): void {
     const vx = entity.params.vx ?? 0;
     const vy = entity.params.vy ?? 0;
 
@@ -714,6 +750,14 @@ export class EntitySystem {
           other.active = false;
           events.emit('enemy_killed', { entity: other });
         }
+        return;
+      }
+    } else {
+      // Enemy projectile — damages player on contact
+      if (overlapsRect(entity.x, entity.y, entity.width, entity.height,
+                       player.x, player.y, player.width, player.height)) {
+        entity.active = false;
+        events.emit('player_damaged_by_enemy', { entity });
         return;
       }
     }
