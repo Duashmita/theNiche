@@ -1047,16 +1047,6 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // ── Options (top-left) ────────────────────────────────────────────────
-    ctx.fillStyle = '#aaaaaa';
-    ctx.font = '5px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('[ESC] OPTIONS', 4, 4);
-
-    // Reset text baseline so we don't accidentally break other UI elements!
-    ctx.textBaseline = 'alphabetic';
-
     // ── Health hearts ─────────────────────────────────────────────────────
     const maxHealth = state.maxHealth ?? 3;
     const health = state.health ?? 3;
@@ -1065,17 +1055,17 @@ export class Renderer {
 
     for (let i = 0; i < maxHearts; i++) {
       const hx = 4 + i * 8;
-      const hy = 18; // Pushed down to 18
+      const hy = 4; // Restored to the original top position
       this.drawHeart(ctx, hx, hy, i < curHearts);
     }
     if (maxHealth > 10) {
       ctx.fillStyle = '#ff8888';
-      ctx.fillText(`${Math.floor(health)}/${maxHealth}`, 4, 18);
+      ctx.fillText(`${Math.floor(health)}/${maxHealth}`, 4, 12);
     }
 
     // ── XP bar ────────────────────────────────────────────────────────────
     const barX   = 4;
-    const xpBarY = 27; // Pushed down to 27
+    const xpBarY = 16; // Restored to just below the hearts
     const barW   = 60;
     const barH   = 2;
     const xpRatio = state.xpToNext > 0 ? clamp((state.playerXP ?? 0) / state.xpToNext, 0, 1) : 0;
@@ -1086,24 +1076,23 @@ export class Renderer {
     ctx.fillRect(barX, xpBarY, Math.floor(barW * xpRatio), barH);
 
     ctx.fillStyle = '#ccaaff';
-    // Adjusted the LV text Y coordinate so it perfectly centers with the bar
-    ctx.fillText(`LV${state.playerLevel ?? 1}`, barX + barW + 3, xpBarY + 2);
+    ctx.fillText(`LV${state.playerLevel ?? 1}`, barX + barW + 3, xpBarY + 3);
 
     // ── Coin tracker ──────────────────────────────────────────────────────
-    const coinY = 36; // Pushed down to 36
+    const coinY = 26; // Placed cleanly below the XP bar
 
     // Draw a tiny gold coin icon
     ctx.fillStyle = '#ffcc44';
     ctx.beginPath();
-    ctx.arc(6, coinY - 1, 2.5, 0, Math.PI * 2);
+    ctx.arc(6, coinY - 2, 2.5, 0, Math.PI * 2);
     ctx.fill();
     // Draw a little white shine on the coin
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(5, coinY - 2, 1, 1);
+    ctx.fillRect(5, coinY - 3, 1, 1);
 
     // Draw the coin count
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`x ${state.coins ?? 0}`, 11, coinY + 1);
+    ctx.fillText(`x ${state.coins ?? 0}`, 11, coinY);
 
     // ── Score (top-right) ─────────────────────────────────────────────────
     ctx.fillStyle = '#ffffff';
